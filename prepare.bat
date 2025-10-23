@@ -13,9 +13,9 @@ if %errorlevel% neq 0 (
 )
 
 :: Create environment
-if exist environment.yml (
+if exist ./config/environment.yml (
     echo Creating environment from environment.yml...
-    conda env create -f /config/environment.yml
+    conda env create -f ./config/environment.yml
 ) else (
     echo environment.yml not found!
     exit /b 1
