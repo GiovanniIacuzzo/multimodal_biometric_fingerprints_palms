@@ -29,10 +29,6 @@ for img_path in all_imgs:
 
 print(f"Discarded {discarded} images due to noise.")
 
-features_dict = balance_classes(features_dict, max_samples=MAX_SAMPLES_PER_CLASS)
-for cls, items in features_dict.items():
-    print(f"Class {cls}: {len(items)} images after balancing.")
-
 final_results = internal_clustering(features_dict, max_k_clusters=MAX_K_CLUSTERS)
 
 with open(OUTPUT_CSV, "w", newline="") as f:

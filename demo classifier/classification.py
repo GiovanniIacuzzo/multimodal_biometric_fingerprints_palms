@@ -8,17 +8,7 @@ def assign_global_label(std_angle):
         return "Loop"
     else: 
         return "Whorl"
-
-def balance_classes(features_dict, max_samples):
-    from sklearn.utils import resample
-    balanced_dict = {}
-    for cls, items in features_dict.items():
-        if len(items) > max_samples:
-            balanced_dict[cls] = resample(items, n_samples=max_samples, random_state=42)
-        else:
-            balanced_dict[cls] = items
-    return balanced_dict
-
+    
 def internal_clustering(features_dict, max_k_clusters):
     from numpy import array, bincount, where
     from pathlib import Path
