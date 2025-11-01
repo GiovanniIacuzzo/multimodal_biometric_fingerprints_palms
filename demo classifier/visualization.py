@@ -4,6 +4,9 @@ import pandas as pd
 import cv2
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 import matplotlib.patches as mpatches
+from pathlib import Path
+import numpy as np
+from config import FIGURE_DIR
 
 # -------------------------------
 # Conteggi classi e cluster
@@ -15,12 +18,16 @@ def plot_class_distribution(final_results):
     plt.figure(figsize=(8,4))
     sns.countplot(data=df, x="global_class", palette="Set2", hue="global_class", dodge=False)
     plt.title("Distribuzione classi globali")
+    plt.tight_layout()
+    plt.savefig(FIGURE_DIR / "class_distribution_global.png")
     plt.show()
     
     # Distribuzione cluster interni
     plt.figure(figsize=(10,4))
     sns.countplot(data=df, x="cluster_in_class", palette="tab20", hue="cluster_in_class", dodge=False)
     plt.title("Distribuzione cluster interni")
+    plt.tight_layout()
+    plt.savefig(FIGURE_DIR / "class_distribution_clusters.png")
     plt.show()
 
 # -------------------------------
@@ -30,7 +37,6 @@ def interactive_tsne(features_dict, final_results, perplexity=30, max_iter=1000)
     from sklearn.preprocessing import StandardScaler
     from sklearn.decomposition import PCA
     from sklearn.manifold import TSNE
-    import numpy as np
 
     X = np.array([r[1] for cls_list in features_dict.values() for r in cls_list])
     X = StandardScaler().fit_transform(X)
@@ -72,4 +78,6 @@ def interactive_tsne(features_dict, final_results, perplexity=30, max_iter=1000)
 
     fig.canvas.mpl_connect("button_press_event", on_click)
     ax.set_title("t-SNE 2D projection - Global Classes")
+    plt.tight_layout()
+    plt.savefig(FIGURE_DIR / "tsne_global_classes.png")
     plt.show()
