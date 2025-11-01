@@ -2,3 +2,5 @@ idea.txt
 dataset/
 .DS_Store
 results/
+__pycache__
+labels.csv
