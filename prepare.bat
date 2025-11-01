@@ -24,14 +24,22 @@ if exist ./config/environment.yml (
 :: Activate environment
 call conda activate multimodal_biometric_transformer
 
-:: Create folders
-:: mkdir data\raw\fingerprints
-:: mkdir data\raw\palms
-:: mkdir data\processed\train
-:: mkdir data\processed\val
-:: mkdir data\processed\test
-:: mkdir checkpoints
-:: mkdir logs
-
 echo Environment setup complete!
 echo To activate later, run: conda activate multimodal_biometric_transformer
+
+echo Creating project directories...
+
+
+set "Result_DIR=results"
+
+:: Crea la cartella principale (se non esiste)
+if not exist "%Result_DIR%" mkdir "%Result_DIR%"
+
+:: Crea le sottocartelle
+if not exist "%Result_DIR%\img" mkdir "%Result_DIR%\img"
+if not exist "%Result_DIR%\logs" mkdir "%Result_DIR%\logs"
+
+echo Folders created:
+echo   - %Result_DIR%\img
+echo   - %Result_DIR%\logs
+

@@ -26,3 +26,18 @@ conda activate multimodal_biometric_transformer
 
 echo "Environment setup complete!"
 echo "To activate later: conda activate multimodal_biometric_transformer"
+
+echo "Creating project directories..."
+
+# Result folder
+Result_DIR="results"
+mkdir -p "$Result_DIR"
+
+# Subfolders
+mkdir -p "$Result_DIR/img"
+mkdir -p "$Result_DIR/logs"
+
+echo "Folders created:"
+echo "  - $Result_DIR/img"
+echo "  - $Result_DIR/logs"
+
