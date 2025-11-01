@@ -1,4 +1,4 @@
-name: multimodal_biometric_transformer
+name: multimodal_biometric
 channels:
   - pytorch
   - conda-forge

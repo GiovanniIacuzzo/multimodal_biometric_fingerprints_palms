@@ -22,10 +22,10 @@ if exist ./config/environment.yml (
 )
 
 :: Activate environment
-call conda activate multimodal_biometric_transformer
+call conda activate multimodal_biometric
 
 echo Environment setup complete!
-echo To activate later, run: conda activate multimodal_biometric_transformer
+echo To activate later, run: conda activate multimodal_biometric
 
 echo Creating project directories...
 

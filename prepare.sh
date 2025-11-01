@@ -22,10 +22,10 @@ fi
 
 # Activate environment
 eval "$(conda shell.bash hook)"
-conda activate multimodal_biometric_transformer
+conda activate multimodal_biometric
 
 echo "Environment setup complete!"
-echo "To activate later: conda activate multimodal_biometric_transformer"
+echo "To activate later: conda activate multimodal_biometric"
 
 echo "Creating project directories..."
 
