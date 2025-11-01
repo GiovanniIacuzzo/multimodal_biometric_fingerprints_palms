@@ -2,7 +2,7 @@
 # Setup Script for macOS / Linux
 # ============================================================
 
-echo "Setting up Conda environment for Multimodal Biometric Transformer..."
+echo "Setting up Conda environment for Multimodal Biometric..."
 
 # Check if conda is installed
 if ! command -v conda &> /dev/null
@@ -23,11 +23,6 @@ fi
 # Activate environment
 eval "$(conda shell.bash hook)"
 conda activate multimodal_biometric_transformer
-
-# Create required directories
-# mkdir -p data/raw/fingerprints data/raw/palms
-# mkdir -p data/processed/train data/processed/val data/processed/test
-# mkdir -p checkpoints logs
 
 echo "Environment setup complete!"
 echo "To activate later: conda activate multimodal_biometric_transformer"
