@@ -10,6 +10,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # Importa i moduli della pipeline
 from scripts.config import ensure_dirs
+from scripts.config import PROCESSED_DIR, FINGERPRINT_MODEL
 from src.data.prepare_catalog import main as prepare_catalog
 from src.preprocessing.run_preprocessing import main as run_preprocessing
 from src.features.minutiae_extraction import main as extract_minutiae
@@ -26,7 +27,7 @@ def run_pipeline():
     ensure_dirs()
 
     try:
-        print("\n[1/6] 🔍 Preparazione catalogo...")
+        """ print("\n[1/6] 🔍 Preparazione catalogo...")
         prepare_catalog()
 
         print("\n[2/6] 🧼 Preprocessing immagini...")
@@ -36,13 +37,13 @@ def run_pipeline():
         extract_minutiae()
 
         print("\n[4/6] 🔬 Estrazione descrittori (handcrafted + deep)...")
-        extract_handcrafted()
+        extract_handcrafted() """
 
         # Training o estrazione feature deep
         print("   ↳ Avvio training modello deep CNN...")
         train_deep_features(
-            dataset_dir=None,
-            save_path=None,
+            dataset_dir=PROCESSED_DIR,
+            save_path=FINGERPRINT_MODEL,
             epochs=5,
             batch_size=16,
             embedding_dim=256,
