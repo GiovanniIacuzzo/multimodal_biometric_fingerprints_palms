@@ -6,3 +6,4 @@ __pycache__
 labels.csv
 .env
 data/
+fingerprint_deep.pt
