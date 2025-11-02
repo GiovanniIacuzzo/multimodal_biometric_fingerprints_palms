@@ -19,15 +19,11 @@ from src.models.descriptors_deep import main as train_deep_features
 from src.matching.run_matching import main as run_matching
 from src.evaluation.evaluate_results import main as evaluate
 
-print("====================================")
-print("🧬 MULTIMODAL BIOMETRIC PIPELINE")
-print("====================================")
-
 def run_pipeline():
     ensure_dirs()
 
     try:
-        """ print("\n[1/6] 🔍 Preparazione catalogo...")
+        print("\n[1/6] 🔍 Preparazione catalogo...")
         prepare_catalog()
 
         print("\n[2/6] 🧼 Preprocessing immagini...")
@@ -37,7 +33,7 @@ def run_pipeline():
         extract_minutiae()
 
         print("\n[4/6] 🔬 Estrazione descrittori (handcrafted + deep)...")
-        extract_handcrafted() """
+        extract_handcrafted()
 
         # Training o estrazione feature deep
         print("   ↳ Avvio training modello deep CNN...")
@@ -64,4 +60,7 @@ def run_pipeline():
         traceback.print_exc()
 
 if __name__ == "__main__":
+    print("====================================")
+    print("🧬 MULTIMODAL BIOMETRIC PIPELINE")
+    print("====================================")
     run_pipeline()

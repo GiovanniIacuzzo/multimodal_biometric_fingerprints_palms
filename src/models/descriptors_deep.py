@@ -119,9 +119,8 @@ def main(
     Funzione main per eseguire il training del feature extractor.
     Nota: il training triplet qui è un semplice placeholder che crea triplet
     dall'interno dello stesso batch (anchor==positive, negative=flipped).
-    Sostituisci la logica di sampling con un generatore di triplet reali per
-    risultati veri.
     """
+    import time
 
     # fallback sui config (se esiste src.config)
     if dataset_dir is None:
@@ -130,7 +129,6 @@ def main(
         models_dir = CONFIG_MODELS_DIR or os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         os.makedirs(models_dir, exist_ok=True)
         save_path = os.path.join(models_dir, "fingerprint_deep.pt")
-
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -149,21 +147,27 @@ def main(
 
     # dataset + loader
     dataset = FingerprintDataset(dataset_dir, transform=train_transform, img_name="enhanced.png")
+    print(f"ℹ️ Immagini trovate nel dataset: {len(dataset)}")
     if len(dataset) == 0:
         raise RuntimeError(f"Nessuna immagine trovata in {dataset_dir}. Controlla la struttura delle cartelle.")
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
+    
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=False)
+    print(f"ℹ️ Numero batch: {len(loader)}")
 
     # model, loss, optimizer
     model = FingerprintFeatureExtractor(embedding_dim=embedding_dim, pretrained=pretrained_backbone).to(device)
     criterion = nn.TripletMarginLoss(margin=1.0)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    
+    print("🚀 Inizio training...")
+    start_time = time.time()
 
     # training loop (semplice)
     for epoch in range(epochs):
         model.train()
         total_loss = 0.0
         n_batches = 0
-        for batch in loader:
+        for i, batch in enumerate(loader):
             # batch: tensor (B, C, H, W)
             anchor = batch.to(device)
             positive = batch.to(device)             # placeholder: usare positive reali
@@ -182,12 +186,17 @@ def main(
             total_loss += loss.item()
             n_batches += 1
 
+            print(f"    ⚡ Batch {i+1}/{len(loader)} - Loss: {loss.item():.6f}")
+
         avg_loss = total_loss / max(1, n_batches)
-        print(f"Epoch [{epoch+1}/{epochs}] - Loss: {avg_loss:.6f}")
+        print(f"✅ Epoch [{epoch+1}/{epochs}] completata - Loss media: {avg_loss:.6f}")
+
+    elapsed = time.time() - start_time
+    print(f"⏱ Tempo totale training: {elapsed:.1f} sec")
 
     # salva solo lo stato del modello
     torch.save(model.state_dict(), save_path)
-    print(f"✅ Modello salvato in {save_path}")
+    print(f"💾 Modello salvato in {save_path}")
 
     return save_path
 

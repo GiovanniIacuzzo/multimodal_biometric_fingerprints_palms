@@ -132,7 +132,7 @@ def main(catalog_path: str = None, output_csv: str = None, weight_minutiae: floa
     ensure_dirs()
 
     if catalog_path is None:
-        catalog_path = os.path.join(DATASET_DIR, "metadata", "catalog.csv")
+        catalog_path = os.path.join(DATASET_DIR, "catalog.csv")
     if output_csv is None:
         output_csv = OUTPUT_SCORES_CSV
 
