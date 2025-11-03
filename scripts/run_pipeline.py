@@ -11,7 +11,6 @@ from scripts.config import PROCESSED_DIR, FINGERPRINT_MODEL
 from src.catalog.prepare_catalog import main as prepare_catalog
 from src.preprocessing.run_preprocessing import main as run_preprocessing
 from src.features.minutiae_extraction import main as extract_minutiae
-from src.features.descriptors_handcrafted import main as extract_handcrafted
 from src.models.descriptors_deep import train_deep_descriptor
 from src.matching.run_matching import main as run_matching
 from src.evaluation.evaluate_results import main as evaluate
@@ -29,10 +28,7 @@ def run_pipeline():
         print("\n[3/6] 🔩 Estrazione minutiae...")
         extract_minutiae(test_mode=True)
 
-        """ print("\n[4/6] 🔬 Estrazione descrittori (handcrafted + deep)...")
-        extract_handcrafted()
-
-        print("   ↳ Avvio training modello deep CNN...")
+        """ print("   ↳ Avvio training modello deep CNN...")
         train_deep_descriptor(
             dataset_dir=PROCESSED_DIR,
             save_path=FINGERPRINT_MODEL,
@@ -44,12 +40,12 @@ def run_pipeline():
             device="mps",
             pretrained=True,
             use_amp=True
-        )
+        ) """
 
         print("\n[5/6] 🤝 Matching e fusione punteggi...")
-        run_matching()
+        run_matching(test_mode=True)
 
-        print("\n[6/6] 📊 Valutazione risultati...")
+        """ print("\n[6/6] 📊 Valutazione risultati...")
         evaluate() """
 
         print("\n✅ Pipeline completata con successo!")

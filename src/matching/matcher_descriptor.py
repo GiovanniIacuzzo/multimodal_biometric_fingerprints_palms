@@ -1,30 +1,71 @@
-"""
-matcher_descriptor.py
-------------------------------
-Matching tra fingerprint basato su feature descriptors (deep o handcrafted).
-"""
-
 import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
+import os
 
+# ============================================================
+#  Caricamento descriptor in modo robusto
+# ============================================================
+def safe_load_descriptor(path: str) -> np.ndarray:
+    """
+    Caricamento sicuro descriptor .npy.
+    Ritorna un array Nx4 in float32, vuoto se file mancante o non valido.
+    """
+    if not os.path.exists(path):
+        print(f"⚠️ Descriptor non trovato: {path}")
+        return np.empty((0, 4), dtype=np.float32)
 
-def load_descriptor(path: str):
     try:
         desc = np.load(path)
-        if desc.ndim > 1:
-            desc = desc.mean(axis=0)
-        desc = desc.astype(np.float32)
-        norm = np.linalg.norm(desc)
-        return desc / norm if norm > 0 else np.zeros_like(desc)
-    except Exception:
-        return np.zeros((128,), dtype=np.float32)  # fallback dimension
+        if desc.ndim != 2 or desc.shape[1] < 3:
+            print(f"⚠️ Descriptor formato non valido (shape {desc.shape}): {path}")
+            return np.empty((0, 4), dtype=np.float32)
+        # Assicuriamoci che abbia almeno 4 colonne
+        if desc.shape[1] < 4:
+            pad = np.zeros((desc.shape[0], 4 - desc.shape[1]), dtype=np.float32)
+            desc = np.hstack([desc, pad])
+        return desc.astype(np.float32)
+    except Exception as e:
+        print(f"⚠️ Errore caricamento descriptor {path}: {e}")
+        return np.empty((0, 4), dtype=np.float32)
 
-
-def descriptor_similarity(template_path: str, probe_path: str) -> float:
-    """Calcola la cosine similarity tra due fingerprint descriptors."""
-    t = load_descriptor(template_path)
-    p = load_descriptor(probe_path)
-    if t.size == 0 or p.size == 0:
+# ============================================================
+#  Similarità descriptor
+# ============================================================
+def descriptor_similarity(desc1: np.ndarray, desc2: np.ndarray) -> float:
+    """
+    Calcola la similarità tra due array descriptor.
+    Restituisce punteggio tra 0 e 1.
+    """
+    if desc1.size == 0 or desc2.size == 0:
         return 0.0
-    sim = cosine_similarity([t], [p])[0, 0]
-    return float(max(0.0, sim))  # evita negativi
+
+    try:
+        coords1, coords2 = desc1[:, :2], desc2[:, :2]
+        types1, types2 = desc1[:, 2], desc2[:, 2]
+
+        # distanza Euclidea
+        dists = np.linalg.norm(coords1[:, None, :] - coords2[None, :, :], axis=2)
+
+        # penalità basata sul tipo
+        type_diff = np.abs(types1[:, None] - types2[None, :])
+        penalty = np.clip(1.0 - 0.5 * type_diff, 0.0, 1.0)
+
+        # pesi esponenziali sulle distanze
+        weights = np.exp(-dists / 20.0) * penalty
+
+        sim = np.mean(np.max(weights, axis=1))
+        return float(np.clip(sim, 0.0, 1.0))
+    except Exception as e:
+        print(f"❌ Errore nel calcolo similarità descriptor: {e}")
+        return 0.0
+
+# ============================================================
+# Test standalone rapido
+# ============================================================
+if __name__ == "__main__":
+    desc1 = np.array([[10, 20, 0, 0.5],
+                      [30, 40, 1, 0.3]], dtype=np.float32)
+    desc2 = np.array([[12, 22, 0, 0.5],
+                      [29, 41, 1, 0.3]], dtype=np.float32)
+
+    score = descriptor_similarity(desc1, desc2)
+    print(f"DEBUG: Similarità descriptor: {score:.3f}")

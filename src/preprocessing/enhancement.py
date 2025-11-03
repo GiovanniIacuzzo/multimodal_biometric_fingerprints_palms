@@ -80,7 +80,11 @@ def clean_skeleton(skel: np.ndarray, min_size=5) -> np.ndarray:
 def preprocess_fingerprint(img: np.ndarray, debug_dir: str = None) -> dict:
     try:
         normalized = normalize_image(img)
+
         denoised = denoise_image(normalized)
+
+        enhanced = denoised.copy()
+
         binary = binarize_image(denoised)
         binary = mask_borders(binary, margin=8)
         skeleton = thinning_opencv(binary)
@@ -90,16 +94,18 @@ def preprocess_fingerprint(img: np.ndarray, debug_dir: str = None) -> dict:
             os.makedirs(debug_dir, exist_ok=True)
             cv2.imwrite(os.path.join(debug_dir, "normalized.png"), normalized)
             cv2.imwrite(os.path.join(debug_dir, "denoised.png"), denoised)
+            cv2.imwrite(os.path.join(debug_dir, "enhanced.png"), enhanced)
             cv2.imwrite(os.path.join(debug_dir, "binary.png"), binary)
             cv2.imwrite(os.path.join(debug_dir, "skeleton.png"), skeleton)
 
         return {
             "normalized": normalized,
             "denoised": denoised,
+            "enhanced": enhanced,
             "binary": binary,
             "skeleton": skeleton
         }
 
     except Exception as e:
         print(f"⚠️ preprocess_fingerprint failed: {e}")
-        return {k: None for k in ["normalized","denoised","binary","skeleton"]}
+        return {k: None for k in ["normalized","denoised","enhanced","binary","skeleton"]}
