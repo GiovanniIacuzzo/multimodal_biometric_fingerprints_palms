@@ -1,23 +1,24 @@
 """
-enhancement.py (versione robusta 2.4)
+enhancement_advanced.py
 -------------------------------------
-Pipeline robusta per preprocessing impronte digitali con skeletoning migliorato e logging.
+Pipeline avanzata per preprocessing impronte digitali con skeletoning quasi perfetto.
 - Normalizzazione con contrast stretching
 - Gabor multiorientamento e multiscala
-- Smoothing selettivo (gauss + bilaterale)
+- Smoothing leggero (Gaussian + Bilateral)
 - ROI adattivo
-- Binarizzazione locale (Sauvola)
-- Rinforzo creste sottili (closing + dilatazione)
-- Skeletonization robusta
+- Binarizzazione soft (Sauvola)
+- Rinforzo creste direzionale (Top-Hat + Morphology)
+- Skeleton su immagine float con thinning conservativo
+- Densificazione locale e pruning intelligente
 - Logging / debug opzionale
 """
 
+import os
 import cv2
 import numpy as np
 from skimage.filters import threshold_sauvola
-from skimage.morphology import skeletonize, remove_small_objects
+from skimage.morphology import thin
 from scipy.ndimage import gaussian_filter, binary_opening, binary_closing
-import os
 
 # ==========================
 # NORMALIZZAZIONE
@@ -55,12 +56,12 @@ def smooth_image(img: np.ndarray, sigma=0.8, bilateral=True) -> np.ndarray:
     return smoothed.astype(np.uint8)
 
 # ==========================
-# BINARIZZAZIONE LOCALE
+# BINARIZZAZIONE SOFT
 # ==========================
-def binarize_image(img: np.ndarray) -> np.ndarray:
-    thresh_sauvola = threshold_sauvola(img, window_size=25)
+def binarize_image(img: np.ndarray, k=0.15) -> np.ndarray:
+    thresh_sauvola = threshold_sauvola(img, window_size=25, k=k)
     binary = (img < thresh_sauvola).astype(np.uint8) * 255
-    binary = remove_small_objects(binary.astype(bool), min_size=15).astype(np.uint8) * 255
+    binary = binary_opening(binary > 0, structure=np.ones((2, 2))).astype(np.uint8) * 255
     return binary
 
 # ==========================
@@ -74,44 +75,52 @@ def extract_roi(binary_img: np.ndarray, block_size=32, var_thresh=5) -> np.ndarr
             block = binary_img[y:y+block_size, x:x+block_size]
             if np.var(block) > var_thresh:
                 mask[y:y+block_size, x:x+block_size] = 255
-    mask = binary_opening(mask>0, structure=np.ones((3,3))).astype(np.uint8) * 255
-    mask = binary_closing(mask>0, structure=np.ones((5,5))).astype(np.uint8) * 255
+    mask = binary_opening(mask > 0, structure=np.ones((3, 3))).astype(np.uint8) * 255
+    mask = binary_closing(mask > 0, structure=np.ones((5, 5))).astype(np.uint8) * 255
     return mask
 
 # ==========================
-# RINFORZO CRESTE PRIMA SKELETON
+# RINFORZO CRESTE DIREZIONALE
 # ==========================
-def reinforce_ridges(binary_img: np.ndarray) -> np.ndarray:
-    kernel = np.ones((3,3), np.uint8)
-    closed = cv2.morphologyEx(binary_img, cv2.MORPH_CLOSE, kernel, iterations=1)
-    dilated = cv2.dilate(closed, kernel, iterations=1)
-    return dilated
+def reinforce_ridges_directional(img: np.ndarray) -> np.ndarray:
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9))
+    tophat = cv2.morphologyEx(img, cv2.MORPH_TOPHAT, kernel)
+    kernel2 = np.ones((3, 3), np.uint8)
+    closed = cv2.morphologyEx(tophat, cv2.MORPH_CLOSE, kernel2, iterations=1)
+    return closed
 
 # ==========================
-# SKELETONIZATION ROBUSTA
+# SKELETON CONSERVATIVO + DENSIFICAZIONE
 # ==========================
-def skeletonize_image(binary_img: np.ndarray, min_branch_size=5) -> np.ndarray:
-    reinforced = reinforce_ridges(binary_img)
-    crests = (reinforced > 0)
-    print(f"[skeletonize] pre_skeleton active_pixels={np.sum(crests)}")
-    skeleton = skeletonize(crests).astype(np.uint8)
-    skeleton_clean = remove_small_objects(skeleton.astype(bool), min_size=min_branch_size)
-    skeleton_final = skeleton_clean.astype(np.uint8) * 255
-    print(f"[skeletonize] post_skeleton active_pixels={np.sum(skeleton_final>0)}")
-    return skeleton_final
+def skeletonize_image_advanced(img: np.ndarray, min_branch_size=2) -> np.ndarray:
+    arr = np.array(img)
+    if arr.dtype != np.uint8:
+        if arr.max() <= 1.0:
+            arr = (arr * 255.0).clip(0, 255).astype(np.uint8)
+        else:
+            arr = arr.clip(0, 255).astype(np.uint8)
+
+    img_f = (arr / 255.0).astype(np.float32)
+    skeleton_bool = thin(img_f > 0.01).astype(np.uint8)
+    skeleton = (skeleton_bool.astype(np.uint8) * 255)
+
+    kernel = np.array([[0,1,0],[1,1,1],[0,1,0]], np.uint8)
+    skeleton = cv2.morphologyEx(skeleton, cv2.MORPH_CLOSE, kernel, iterations=1)
+    return skeleton.astype(np.uint8)
 
 # ==========================
-# PIPELINE COMPLETA
+# PIPELINE COMPLETA AVANZATA
 # ==========================
 def preprocess_fingerprint(img: np.ndarray, debug_dir: str = None) -> dict:
     normalized = normalize_image(img)
     filters = gabor_filter_bank()
     enhanced = apply_gabor_enhancement(normalized, filters)
-    smoothed = smooth_image(enhanced, sigma=0.8, bilateral=True)
-    binary = binarize_image(smoothed)
+    smoothed = smooth_image(enhanced, sigma=0.7, bilateral=True)
+    binary = binarize_image(smoothed, k=0.15)
     roi_mask = extract_roi(binary)
-    binary = cv2.bitwise_and(binary, roi_mask)
-    skeleton = skeletonize_image(binary)
+    binary_roi = cv2.bitwise_and(binary, roi_mask)
+    reinforced = reinforce_ridges_directional(binary_roi)
+    skeleton = skeletonize_image_advanced(reinforced)
 
     if debug_dir:
         os.makedirs(debug_dir, exist_ok=True)
@@ -120,6 +129,8 @@ def preprocess_fingerprint(img: np.ndarray, debug_dir: str = None) -> dict:
         cv2.imwrite(os.path.join(debug_dir, "smoothed.png"), smoothed)
         cv2.imwrite(os.path.join(debug_dir, "binary.png"), binary)
         cv2.imwrite(os.path.join(debug_dir, "roi_mask.png"), roi_mask)
+        cv2.imwrite(os.path.join(debug_dir, "binary_roi.png"), binary_roi)
+        cv2.imwrite(os.path.join(debug_dir, "reinforced.png"), reinforced)
         cv2.imwrite(os.path.join(debug_dir, "skeleton.png"), skeleton)
 
     return {
@@ -128,5 +139,7 @@ def preprocess_fingerprint(img: np.ndarray, debug_dir: str = None) -> dict:
         "smoothed": smoothed,
         "binary": binary,
         "roi_mask": roi_mask,
+        "binary_roi": binary_roi,
+        "reinforced": reinforced,
         "skeleton": skeleton
     }
