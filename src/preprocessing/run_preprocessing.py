@@ -6,14 +6,18 @@ usando la pipeline di enhancement.py con:
 - logging dettagliato
 - controllo path
 - gestione errori migliorata
+- modalità test opzionale (--test o test_mode=True)
 """
 
 import os
 import cv2
+import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import traceback
+import argparse
+
 from src.preprocessing.enhancement import preprocess_fingerprint
 from scripts.config import PROCESSED_DIR, CATALOG_CSV
 
@@ -26,7 +30,6 @@ MAX_WORKERS = min(8, os.cpu_count())
 # ==========================
 # FUNZIONE DI PROCESSAMENTO
 # ==========================
-
 def process_single_image(row):
     img_path = row["path"]
     base_name = os.path.splitext(os.path.basename(img_path))[0]
@@ -34,7 +37,6 @@ def process_single_image(row):
     os.makedirs(save_dir, exist_ok=True)
 
     try:
-        # --- Controllo path ---
         if not os.path.exists(img_path):
             return {"status": "MISSING", "path": img_path, "error": "File non trovato"}
 
@@ -45,10 +47,18 @@ def process_single_image(row):
         # --- Preprocessing ---
         results = preprocess_fingerprint(img, debug_dir=save_dir)
 
-        # --- Salvataggio risultati ---
+        if results is None:
+            return {"status": "ERROR", "path": img_path, "error": "preprocess_fingerprint returned None"}
+
+        # --- Salvataggio immagini ---
         for key, img_res in results.items():
-            if img_res is not None and img_res.size > 0:
-                cv2.imwrite(os.path.join(save_dir, f"{key}.png"), img_res)
+            if img_res is not None:
+                # Converti bool -> uint8
+                if img_res.dtype == bool:
+                    img_to_save = (img_res.astype(np.uint8) * 255)
+                else:
+                    img_to_save = img_res
+                cv2.imwrite(os.path.join(save_dir, f"{key}.png"), img_to_save)
 
         return {"status": "OK", "path": img_path, "error": None}
 
@@ -59,9 +69,13 @@ def process_single_image(row):
 # ==========================
 # MAIN LOOP PARALLELIZZATO
 # ==========================
-def main():
+def main(test_mode=False):
     df = pd.read_csv(CATALOG_CSV)
-    print(f"📁 Totale immagini da processare: {len(df)}")
+    if test_mode:
+        df = df.head(10)
+        print(f"⚙️ Modalità TEST attiva: verranno processate solo {len(df)} immagini.")
+    else:
+        print(f"📁 Totale immagini da processare: {len(df)}")
 
     results = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
@@ -83,5 +97,11 @@ def main():
     print(f"   ✅ OK: {ok_count} | ⚠️ Missing: {miss_count} | 🟥 Unreadable: {unread_count} | ❌ Error: {err_count}")
     print(f"   🔍 Log dettagliato: {LOG_PATH}")
 
+# ==========================
+# ENTRY POINT
+# ==========================
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Esegue il preprocessing delle immagini.")
+    parser.add_argument("--test", action="store_true", help="Usa solo 10 immagini per test.")
+    args = parser.parse_args()
+    main(test_mode=args.test)

@@ -18,7 +18,7 @@ from scripts.config import DATASET_DIR
 # CONFIGURAZIONE
 # ==============================
 
-DATASET_ROOT = "../dataset/DBII"
+DATASET_ROOT = "dataset/DBII"
 OUTPUT_CSV = os.path.join(DATASET_DIR, "catalog.csv")
 
 # Regex per parsing del nome file: es. 001_2_1.jpg

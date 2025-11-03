@@ -24,12 +24,12 @@ def run_pipeline():
         prepare_catalog()
 
         print("\n[2/6] 🧼 Preprocessing immagini...")
-        run_preprocessing()
+        run_preprocessing(test_mode=True)
 
-        """ print("\n[3/6] 🔩 Estrazione minutiae...")
-        extract_minutiae()
+        print("\n[3/6] 🔩 Estrazione minutiae...")
+        extract_minutiae(test_mode=True)
 
-        print("\n[4/6] 🔬 Estrazione descrittori (handcrafted + deep)...")
+        """ print("\n[4/6] 🔬 Estrazione descrittori (handcrafted + deep)...")
         extract_handcrafted()
 
         print("   ↳ Avvio training modello deep CNN...")
