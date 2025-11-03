@@ -11,11 +11,11 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 # Importa i moduli della pipeline
 from scripts.config import ensure_dirs
 from scripts.config import PROCESSED_DIR, FINGERPRINT_MODEL
-from src.data.prepare_catalog import main as prepare_catalog
+from src.catalog.prepare_catalog import main as prepare_catalog
 from src.preprocessing.run_preprocessing import main as run_preprocessing
 from src.features.minutiae_extraction import main as extract_minutiae
 from src.features.descriptors_handcrafted import main as extract_handcrafted
-from src.models.descriptors_deep import main as train_deep_features
+from src.models.descriptors_deep import train_deep_descriptor
 from src.matching.run_matching import main as run_matching
 from src.evaluation.evaluate_results import main as evaluate
 
@@ -35,16 +35,18 @@ def run_pipeline():
         print("\n[4/6] 🔬 Estrazione descrittori (handcrafted + deep)...")
         extract_handcrafted()
 
-        # Training o estrazione feature deep
         print("   ↳ Avvio training modello deep CNN...")
-        train_deep_features(
+        train_deep_descriptor(
             dataset_dir=PROCESSED_DIR,
             save_path=FINGERPRINT_MODEL,
-            epochs=5,
-            batch_size=16,
+            epochs=2,
+            batch_size=8,
             embedding_dim=256,
             lr=1e-4,
-            device=None
+            backbone="resnet18",
+            device="mps",
+            pretrained=True,
+            use_amp=True
         )
 
         print("\n[5/6] 🤝 Matching e fusione punteggi...")

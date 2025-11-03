@@ -1,38 +1,26 @@
 """
-score_fusion.py
-----------------
-Fusione dei punteggi di similarità (minutiae + descriptor) in un unico score normalizzato.
+score_fusion.py (adaptive)
+--------------------------
+Fusione adattiva dei punteggi minutiae + descriptor.
 """
 
-def normalize_score(score, method="minmax", min_val=0.0, max_val=1.0):
-    """
-    Normalizza uno score tra 0 e 1 (default).
-    """
-    if method == "minmax":
-        return max(0.0, min(1.0, (score - min_val) / (max_val - min_val)))
-    elif method == "sigmoid":
-        import math
-        return 1 / (1 + math.exp(-score))
-    return score
+import numpy as np
 
 
-def fuse_scores(score_minutiae, score_descriptor, weight_minutiae=0.5):
+def adaptive_fusion(score_min, score_desc, eps=1e-6):
     """
-    Fusione pesata dei due score.
-    weight_minutiae = importanza relativa del punteggio minutiae
+    Fusione dinamica:
+     - Se uno dei due score è basso, l'altro prevale.
+     - Se entrambi sono alti, aumenta la confidenza.
     """
-    weight_descriptor = 1 - weight_minutiae
-    # Normalizzazione preliminare
-    s_m = normalize_score(score_minutiae)
-    s_d = normalize_score(score_descriptor)
-    # Fusione pesata
-    s_final = weight_minutiae * s_m + weight_descriptor * s_d
-    return s_final
+    # normalizzazione
+    s_m = np.clip(score_min, 0.0, 1.0)
+    s_d = np.clip(score_desc, 0.0, 1.0)
 
+    # pesatura adattiva (favorisce quello più “stabile”)
+    weight_m = s_m / (s_m + s_d + eps)
+    weight_d = 1 - weight_m
 
-if __name__ == "__main__":
-    # Esempio
-    score_minutiae = 0.412
-    score_descriptor = 0.876
-    score_final = fuse_scores(score_minutiae, score_descriptor, weight_minutiae=0.4)
-    print(f"🔗 Score finale normalizzato: {score_final:.3f}")
+    fused = weight_m * s_m + weight_d * s_d
+    synergy = np.sqrt(s_m * s_d)  # enfatizza coerenza tra i due
+    return float(np.clip(0.7 * fused + 0.3 * synergy, 0.0, 1.0))
