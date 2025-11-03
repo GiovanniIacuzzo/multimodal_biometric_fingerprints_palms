@@ -1,5 +1,5 @@
 """
-minutiae_extraction.py (versione robusta)
+minutiae_extraction.py
 ------------------------------------------
 Estrazione minutiae robusta e performante da immagini skeletonizzate.
 """
@@ -10,12 +10,11 @@ import json
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from scipy.ndimage import gaussian_filter
 from scripts.config import PROCESSED_DIR, FEATURES_DIR, DATASET_DIR
 
 
 # ==========================
-# CROSSING NUMBER (robusto)
+# CROSSING NUMBER
 # ==========================
 def crossing_number(neighborhood: np.ndarray) -> int:
     """

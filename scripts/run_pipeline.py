@@ -1,6 +1,3 @@
-# ============================
-# run_pipeline.py
-# ============================
 import sys
 import os
 import traceback

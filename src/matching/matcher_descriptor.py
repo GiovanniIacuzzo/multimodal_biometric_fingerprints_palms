@@ -1,5 +1,5 @@
 """
-matcher_descriptor.py (robust)
+matcher_descriptor.py
 ------------------------------
 Matching tra fingerprint basato su feature descriptors (deep o handcrafted).
 """

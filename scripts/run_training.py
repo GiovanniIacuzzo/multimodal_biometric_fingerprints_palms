@@ -1,7 +1,5 @@
-# src/scripts/run_training.py
 import os
 import argparse
-from pathlib import Path
 
 # sistema import path in caso venga eseguito dalla root
 import sys

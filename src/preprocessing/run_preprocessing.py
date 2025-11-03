@@ -1,8 +1,8 @@
 """
-run_preprocessing.py (versione robusta e tracciabile)
+run_preprocessing.py
 ---------------------------------------------------
 Esegue il preprocessing su tutte le immagini del dataset
-usando la pipeline di enhancement_advanced.py con:
+usando la pipeline di enhancement.py con:
 - logging dettagliato
 - controllo path
 - gestione errori migliorata
@@ -15,16 +15,12 @@ from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import traceback
 from src.preprocessing.enhancement import preprocess_fingerprint
+from scripts.config import PROCESSED_DIR, CATALOG_CSV
 
 # ==========================
 # CONFIG
 # ==========================
-
-CATALOG_PATH = "/Users/giovanni02/Desktop/UNIKORE/multimodal_biometric_fingerprints_palms/data/metadata/catalog.csv"
-OUTPUT_DIR = "/Users/giovanni02/Desktop/UNIKORE/multimodal_biometric_fingerprints_palms/data/processed"
-LOG_PATH = os.path.join(OUTPUT_DIR, "errors_log.csv")
-
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+LOG_PATH = os.path.join(PROCESSED_DIR, "errors_log.csv")
 MAX_WORKERS = min(8, os.cpu_count())
 
 # ==========================
@@ -34,7 +30,7 @@ MAX_WORKERS = min(8, os.cpu_count())
 def process_single_image(row):
     img_path = row["path"]
     base_name = os.path.splitext(os.path.basename(img_path))[0]
-    save_dir = os.path.join(OUTPUT_DIR, base_name)
+    save_dir = os.path.join(PROCESSED_DIR, base_name)
     os.makedirs(save_dir, exist_ok=True)
 
     try:
@@ -63,9 +59,8 @@ def process_single_image(row):
 # ==========================
 # MAIN LOOP PARALLELIZZATO
 # ==========================
-
 def main():
-    df = pd.read_csv(CATALOG_PATH)
+    df = pd.read_csv(CATALOG_CSV)
     print(f"📁 Totale immagini da processare: {len(df)}")
 
     results = []
@@ -84,7 +79,7 @@ def main():
     unread_count = (df_results["status"] == "UNREADABLE").sum()
     err_count = (df_results["status"] == "ERROR").sum()
 
-    print(f"\n✅ Preprocessing completato! File salvati in: {OUTPUT_DIR}")
+    print(f"\n✅ Preprocessing completato! File salvati in: {PROCESSED_DIR}")
     print(f"   ✅ OK: {ok_count} | ⚠️ Missing: {miss_count} | 🟥 Unreadable: {unread_count} | ❌ Error: {err_count}")
     print(f"   🔍 Log dettagliato: {LOG_PATH}")
 

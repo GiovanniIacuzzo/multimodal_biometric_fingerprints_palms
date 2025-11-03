@@ -1,5 +1,5 @@
 """
-score_fusion.py (adaptive)
+score_fusion.py
 --------------------------
 Fusione adattiva dei punteggi minutiae + descriptor.
 """

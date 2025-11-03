@@ -1,5 +1,5 @@
 """
-matcher_minutiae.py (robust)
+matcher_minutiae.py
 ----------------------------
 Matching geometrico tra due fingerprint basato su minutiae.
 Usa allineamento affino (RANSAC) e punteggio robusto.

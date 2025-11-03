@@ -1,5 +1,5 @@
 """
-run_matching.py (robust & adaptive)
+run_matching.py
 -----------------------------------
 Esegue matching 1:N su tutto il dataset usando:
  - matcher_minutiae.minutiae_similarity (geometrico)

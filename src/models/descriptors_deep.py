@@ -1,6 +1,3 @@
-# ================================================
-# src/models/descriptors_deep.py
-# ================================================
 """
 Modulo per l'estrazione di descrittori deep-learning da immagini di impronte digitali.
 Offre un modello flessibile e robusto basato su backbone CNN/Transformer,

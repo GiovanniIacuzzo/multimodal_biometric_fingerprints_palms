@@ -1,5 +1,5 @@
 """
-enhancement_advanced.py
+enhancement.py
 -------------------------------------
 Pipeline avanzata per preprocessing impronte digitali con skeletoning quasi perfetto.
 - Normalizzazione con contrast stretching
@@ -92,7 +92,7 @@ def reinforce_ridges_directional(img: np.ndarray) -> np.ndarray:
 # ==========================
 # SKELETON CONSERVATIVO + DENSIFICAZIONE
 # ==========================
-def skeletonize_image_advanced(img: np.ndarray, min_branch_size=2) -> np.ndarray:
+def skeletonize_image(img: np.ndarray, min_branch_size=2) -> np.ndarray:
     arr = np.array(img)
     if arr.dtype != np.uint8:
         if arr.max() <= 1.0:
@@ -120,7 +120,7 @@ def preprocess_fingerprint(img: np.ndarray, debug_dir: str = None) -> dict:
     roi_mask = extract_roi(binary)
     binary_roi = cv2.bitwise_and(binary, roi_mask)
     reinforced = reinforce_ridges_directional(binary_roi)
-    skeleton = skeletonize_image_advanced(reinforced)
+    skeleton = skeletonize_image(reinforced)
 
     if debug_dir:
         os.makedirs(debug_dir, exist_ok=True)

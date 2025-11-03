@@ -12,14 +12,14 @@ import os
 import re
 import cv2
 import pandas as pd
+from scripts.config import DATASET_DIR
 
 # ==============================
 # CONFIGURAZIONE
 # ==============================
 
-DATASET_ROOT = "/Users/giovanni02/Desktop/UNIKORE/multimodal_biometric_fingerprints_palms/dataset/DBII"          # Directory principale del dataset
-OUTPUT_DIR = "/Users/giovanni02/Desktop/UNIKORE/multimodal_biometric_fingerprints_palms/data/metadata"
-OUTPUT_CSV = os.path.join(OUTPUT_DIR, "catalog.csv")
+DATASET_ROOT = "../dataset/DBII"
+OUTPUT_CSV = os.path.join(DATASET_DIR, "catalog.csv")
 
 # Regex per parsing del nome file: es. 001_2_1.jpg
 FILENAME_PATTERN = re.compile(r"(\d+)_(\d+)_(\d+)\.jpg$", re.IGNORECASE)
