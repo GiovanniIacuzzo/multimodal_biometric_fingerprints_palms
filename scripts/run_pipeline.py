@@ -29,7 +29,7 @@ def run_pipeline():
         print("\n[2/6] 🧼 Preprocessing immagini...")
         run_preprocessing()
 
-        print("\n[3/6] 🔩 Estrazione minutiae...")
+        """ print("\n[3/6] 🔩 Estrazione minutiae...")
         extract_minutiae()
 
         print("\n[4/6] 🔬 Estrazione descrittori (handcrafted + deep)...")
@@ -53,7 +53,7 @@ def run_pipeline():
         run_matching()
 
         print("\n[6/6] 📊 Valutazione risultati...")
-        evaluate()
+        evaluate() """
 
         print("\n✅ Pipeline completata con successo!")
 
