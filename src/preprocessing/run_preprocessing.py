@@ -19,7 +19,7 @@ import traceback
 import argparse
 
 from src.preprocessing.enhancement import preprocess_fingerprint
-from scripts.config import PROCESSED_DIR, CATALOG_CSV
+from config.config import PROCESSED_DIR, CATALOG_CSV
 
 # ==========================
 # CONFIG

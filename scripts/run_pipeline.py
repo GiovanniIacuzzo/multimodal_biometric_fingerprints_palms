@@ -6,8 +6,8 @@ import traceback
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # Importa i moduli della pipeline
-from scripts.config import ensure_dirs
-from scripts.config import PROCESSED_DIR, FINGERPRINT_MODEL
+from config.config import ensure_dirs
+from config.config import PROCESSED_DIR, FINGERPRINT_MODEL
 from src.catalog.prepare_catalog import main as prepare_catalog
 from src.preprocessing.run_preprocessing import main as run_preprocessing
 from src.features.minutiae_extraction import main as extract_minutiae

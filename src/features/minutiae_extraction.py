@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 from skimage.morphology import thin
-from scripts.config import PROCESSED_DIR, FEATURES_DIR, CATALOG_CSV
+from config.config import PROCESSED_DIR, FEATURES_DIR, CATALOG_CSV
 
 # ==========================
 # CROSSING NUMBER

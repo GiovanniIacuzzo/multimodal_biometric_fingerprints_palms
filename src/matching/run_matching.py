@@ -7,7 +7,7 @@ import argparse
 
 # Tenta import config
 try:
-    from scripts.config import DATASET_DIR, FEATURES_DIR, RESULTS_DIR, ensure_dirs
+    from config.config import DATASET_DIR, FEATURES_DIR, RESULTS_DIR, ensure_dirs
 except Exception:
     BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     DATASET_DIR = os.path.join(BASE_DIR, "data")

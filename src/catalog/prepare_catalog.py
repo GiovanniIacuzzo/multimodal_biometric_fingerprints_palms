@@ -12,7 +12,7 @@ import os
 import re
 import cv2
 import pandas as pd
-from scripts.config import DATASET_DIR
+from config.config import DATASET_DIR
 
 # ==============================
 # CONFIGURAZIONE
