@@ -6,7 +6,7 @@ from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 import matplotlib.patches as mpatches
 from pathlib import Path
 import numpy as np
-from config import FIGURE_DIR
+from demo.config import FIGURE_DIR
 
 # -------------------------------
 # Conteggi classi e cluster

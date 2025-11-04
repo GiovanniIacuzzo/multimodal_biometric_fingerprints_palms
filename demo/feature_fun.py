@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 from skimage.feature import hog, local_binary_pattern
 from sklearn.preprocessing import StandardScaler
-from config import *
+from demo.config import *
 
 # =====================================================
 # NORMALIZZAZIONE DI BASE

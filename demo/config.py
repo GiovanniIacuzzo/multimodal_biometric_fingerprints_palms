@@ -8,9 +8,9 @@ load_dotenv(dotenv_path=Path(__file__).parent / "config.env")
 # -------------------------------
 # CONFIGURAZIONE
 # -------------------------------
-DATASET_DIR = Path(os.getenv("DATASET_DIR", "../dataset/DBII"))
-OUTPUT_CSV = Path(os.getenv("OUTPUT_CSV", "..results/logs/labels.csv"))
-FIGURE_DIR = Path(os.getenv("IMG", "../results/img"))
+DATASET_DIR = Path(os.getenv("DATASET_DIR", "./dataset/DBII"))
+OUTPUT_CSV = Path(os.getenv("OUTPUT_CSV", "./results/logs/labels.csv"))
+FIGURE_DIR = Path(os.getenv("IMG", "./results/img"))
 
 # Lettura scale multiple
 IMG_SCALES = [

@@ -1,6 +1,6 @@
 import numpy as np
 from pathlib import Path
-from clustering import consensus_kmeans
+from demo.clustering import consensus_kmeans
 from sklearn.metrics import silhouette_score
 
 # ============================================================

@@ -1,9 +1,9 @@
 import cv2
 import csv
-from feature_fun import *
-from classification import *
-from visualization import *
-from config import *
+from demo.feature_fun import *
+from demo.classification import *
+from demo.visualization import *
+from demo.config import *
 
 all_imgs = sorted(DATASET_DIR.glob("**/*.jpg"))
 print(f"Found {len(all_imgs)} images.")
