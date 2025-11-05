@@ -1,7 +1,6 @@
 import numpy as np
 from pathlib import Path
-from demo.clustering import consensus_kmeans
-from sklearn.metrics import silhouette_score
+from demo.clustering_utils import consensus_kmeans
 
 # ============================================================
 # GLOBAL CLASS ASSIGNMENT
