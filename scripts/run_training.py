@@ -1,34 +1,49 @@
 import os
-import argparse
-
-# sistema import path in caso venga eseguito dalla root
 import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-from src.models.descriptors_deep import main as train_main
-
-def parse_args():
-    p = argparse.ArgumentParser(description="Train fingerprint deep descriptor")
-    p.add_argument("--dataset_dir", type=str, default=None, help="Directory con immagini processed (cartelle per soggetto)")
-    p.add_argument("--save_path", type=str, default=None, help="Dove salvare il modello (file .pt)")
-    p.add_argument("--epochs", type=int, default=5)
-    p.add_argument("--batch_size", type=int, default=16)
-    p.add_argument("--embedding_dim", type=int, default=256)
-    p.add_argument("--lr", type=float, default=1e-4)
-    p.add_argument("--device", type=str, default=None, help="cuda / cpu or None to auto")
-    return p.parse_args()
+import torch
+import multiprocessing as mp
 
 if __name__ == "__main__":
-    args = parse_args()
+    try:
+        mp.set_start_method("spawn", force=True)
+    except RuntimeError:
+        pass
 
-    # fallback: se non fornito, train_main userà src.config (se esiste) o i default
-    saved = train_main(
-        dataset_dir=args.dataset_dir,
-        save_path=args.save_path,
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        embedding_dim=args.embedding_dim,
-        lr=args.lr,
-        device=args.device
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from src.models.descriptors_deep import train_deep_descriptor
+
+
+if __name__ == "__main__":
+    # Imposta parametri direttamente qui
+    dataset_dir = "dataset/DBII"
+    save_path = "data/model/deep_descriptor.pth"
+    epochs = 10
+    batch_size = 16
+    embedding_dim = 256
+    lr = 1e-4
+
+    # Seleziona device automaticamente
+    if torch.cuda.is_available():
+        device = "cuda"
+    elif torch.backends.mps.is_available():
+        device = "mps"
+    else:
+        device = "cpu"
+
+    print(f"Avvio training deep model su device: {device}")
+
+    # Nota: use_amp solo su CUDA, mai su MPS o CPU
+    model = train_deep_descriptor(
+        dataset_dir=dataset_dir,
+        save_path=save_path,
+        epochs=epochs,
+        batch_size=batch_size,
+        embedding_dim=embedding_dim,
+        lr=lr,
+        device=device,
+        pretrained=True,
+        use_amp=device
     )
-    print(f"Training finito. Modello salvato in: {saved}")
+
+    print(f"Training completato. Modello salvato in: {save_path}")

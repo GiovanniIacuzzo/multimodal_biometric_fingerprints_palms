@@ -9,14 +9,14 @@ from torchvision import transforms
 class FingerprintDataset(Dataset):
     """
     Dataset per immagini di impronte digitali.
-    Ogni sottocartella rappresenta un soggetto, contenente una o più immagini.
-    Durante il training, genera (anchor, positive, negative) dinamici.
+    Ogni immagine ha nome nel formato: <id>_<session>_<index>.jpg
+    (es: 117_2_5.jpg → soggetto 117)
+    Durante il training, genera coppie (anchor, positive, negative) dinamiche.
     """
-    def __init__(self, root_dir, img_name="enhanced.png", transform=None, augment=True):
+    def __init__(self, root_dir, transform=None, augment=True):
         self.root_dir = root_dir
         self.transform = transform
         self.augment = augment
-        self.img_name = img_name
         self.samples = self._scan_dataset()
 
         if len(self.samples) == 0:
@@ -31,14 +31,13 @@ class FingerprintDataset(Dataset):
         ]) if augment else None
 
     def _scan_dataset(self):
-        """Crea lista [(classe, path_img), ...]"""
+        """Crea lista [(id_soggetto, path_img), ...] basata sul nome file."""
         samples = []
-        for subject in sorted(os.listdir(self.root_dir)):
-            subject_path = os.path.join(self.root_dir, subject)
-            if os.path.isdir(subject_path):
-                for file in os.listdir(subject_path):
-                    if file.endswith((".png", ".jpg", ".jpeg")):
-                        samples.append((subject, os.path.join(subject_path, file)))
+        for file in sorted(os.listdir(self.root_dir)):
+            if file.lower().endswith((".png", ".jpg", ".jpeg")):
+                subject_id = file.split("_")[0]  # prende il primo numero come ID
+                path = os.path.join(self.root_dir, file)
+                samples.append((subject_id, path))
         return samples
 
     def __len__(self):
@@ -49,12 +48,9 @@ class FingerprintDataset(Dataset):
         subject, anchor_path = self.samples[idx]
         anchor_img = Image.open(anchor_path).convert("L")
 
-        # Trova una positiva dello stesso soggetto
+        # Positiva dello stesso soggetto
         same_subject_imgs = [p for s, p in self.samples if s == subject and p != anchor_path]
-        if same_subject_imgs:
-            positive_path = same_subject_imgs[0]
-        else:
-            positive_path = anchor_path  # fallback se solo un'immagine
+        positive_path = same_subject_imgs[0] if same_subject_imgs else anchor_path
         positive_img = Image.open(positive_path).convert("L")
 
         # Negativa da un altro soggetto

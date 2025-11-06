@@ -80,15 +80,15 @@ def save_catalog(records, output_csv):
     os.makedirs(os.path.dirname(output_csv), exist_ok=True)
     df = pd.DataFrame(records)
     df.to_csv(output_csv, index=False)
-    print(f"\n✅ Catalogo salvato in: {output_csv}")
+    print(f"\nCatalogo salvato in: {output_csv}")
     print(f"Totale immagini: {len(df)}")
 
 
 def main():
-    print("📁 Scansione del dataset PolyU HRF DBII...")
+    print("Scansione del dataset PolyU HRF DBII...")
     records = scan_dataset(DATASET_ROOT)
     if not records:
-        print("⚠️ Nessuna immagine trovata. Controlla il percorso del dataset.")
+        print("Nessuna immagine trovata. Controlla il percorso del dataset.")
         return
     save_catalog(records, OUTPUT_CSV)
 

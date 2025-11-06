@@ -1,107 +1,118 @@
-"""
-run_preprocessing.py
----------------------------------------------------
-Esegue il preprocessing su tutte le immagini del dataset
-usando la pipeline di enhancement.py con:
-- logging dettagliato
-- controllo path
-- gestione errori migliorata
-- modalità test opzionale (--test o test_mode=True)
-"""
-
 import os
 import cv2
-import numpy as np
-import pandas as pd
-from tqdm import tqdm
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import traceback
 import argparse
-
+import traceback
+import numpy as np
+from tqdm import tqdm
 from src.preprocessing.enhancement import preprocess_fingerprint
-from config.config import PROCESSED_DIR, CATALOG_CSV
 
-# ==========================
-# CONFIG
-# ==========================
-LOG_PATH = os.path.join(PROCESSED_DIR, "errors_log.csv")
-MAX_WORKERS = min(8, os.cpu_count())
+# ================================================
+# UTILITY FUNZIONI
+# ================================================
 
-# ==========================
-# FUNZIONE DI PROCESSAMENTO
-# ==========================
-def process_single_image(row):
-    img_path = row["path"]
-    base_name = os.path.splitext(os.path.basename(img_path))[0]
-    save_dir = os.path.join(PROCESSED_DIR, base_name)
-    os.makedirs(save_dir, exist_ok=True)
-
+def load_image(path: str) -> np.ndarray:
+    """Carica immagine in scala di grigi, controllando errori."""
     try:
-        if not os.path.exists(img_path):
-            return {"status": "MISSING", "path": img_path, "error": "File non trovato"}
-
-        img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+        img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
         if img is None:
-            return {"status": "UNREADABLE", "path": img_path, "error": "cv2.imread() ha restituito None"}
-
-        # --- Preprocessing ---
-        results = preprocess_fingerprint(img, debug_dir=save_dir)
-
-        if results is None:
-            return {"status": "ERROR", "path": img_path, "error": "preprocess_fingerprint returned None"}
-
-        # --- Salvataggio immagini ---
-        for key, img_res in results.items():
-            if img_res is not None:
-                # Converti bool -> uint8
-                if img_res.dtype == bool:
-                    img_to_save = (img_res.astype(np.uint8) * 255)
-                else:
-                    img_to_save = img_res
-                cv2.imwrite(os.path.join(save_dir, f"{key}.png"), img_to_save)
-
-        return {"status": "OK", "path": img_path, "error": None}
-
+            raise IOError("Immagine non leggibile")
+        return img
     except Exception as e:
-        err_trace = traceback.format_exc(limit=2)
-        return {"status": "ERROR", "path": img_path, "error": f"{type(e).__name__}: {e}\n{err_trace}"}
+        print(f"[ERRORE] Impossibile leggere {path}: {e}")
+        return None
 
-# ==========================
-# MAIN LOOP PARALLELIZZATO
-# ==========================
-def main(test_mode=False):
-    df = pd.read_csv(CATALOG_CSV)
-    if test_mode:
-        df = df.head(10)
-        print(f"⚙️ Modalità TEST attiva: verranno processate solo {len(df)} immagini.")
-    else:
-        print(f"📁 Totale immagini da processare: {len(df)}")
 
-    results = []
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {executor.submit(process_single_image, row): row for _, row in df.iterrows()}
+def save_debug_images(results: dict, output_dir: str, base_name: str):
+    """Salva tutte le fasi intermedie del preprocessing."""
+    os.makedirs(output_dir, exist_ok=True)
+    for key, img in results.items():
+        if img is None:
+            continue
+        filename = os.path.join(output_dir, f"{base_name}_{key}.png")
+        try:
+            cv2.imwrite(filename, img)
+        except Exception:
+            print(f"[ATTENZIONE] Fallito salvataggio di {filename}")
 
-        for f in tqdm(as_completed(futures), total=len(futures), desc="Preprocessing"):
-            results.append(f.result())
 
-    # --- Analisi risultati ---
-    df_results = pd.DataFrame(results)
-    df_results.to_csv(LOG_PATH, index=False)
 
-    ok_count = (df_results["status"] == "OK").sum()
-    miss_count = (df_results["status"] == "MISSING").sum()
-    unread_count = (df_results["status"] == "UNREADABLE").sum()
-    err_count = (df_results["status"] == "ERROR").sum()
+# ================================================
+# MAIN PIPELINE
+# ================================================
 
-    print(f"\n✅ Preprocessing completato! File salvati in: {PROCESSED_DIR}")
-    print(f"   ✅ OK: {ok_count} | ⚠️ Missing: {miss_count} | 🟥 Unreadable: {unread_count} | ❌ Error: {err_count}")
-    print(f"   🔍 Log dettagliato: {LOG_PATH}")
+def run_preprocessing(
+    input_dir: str,
+    output_dir: str = "outputs/preprocessed",
+    debug: bool = True,
+    small_subset: bool = False
+):
+    """
+    Applica il preprocessing completo su un dataset di impronte digitali.
+    Se small_subset=True, usa solo le prime 10 immagini per test/debug rapido.
+    """
+    # Filtra immagini valide
+    image_files = sorted([
+        f for f in os.listdir(input_dir)
+        if f.lower().endswith(('.jpg', '.png', '.jpeg'))
+    ])
 
-# ==========================
+    if not image_files:
+        raise RuntimeError(f"Nessuna immagine trovata in {input_dir}")
+
+    # Se richiesto, usa solo un piccolo subset
+    if small_subset:
+        image_files = image_files[:10]
+        print(f"[DEBUG MODE] Utilizzo di solo {len(image_files)} immagini per test rapido.")
+
+    print(f"Trovate {len(image_files)} immagini in '{input_dir}'")
+    print(f"Output directory: {output_dir}")
+
+    # Prepara le sottocartelle
+    os.makedirs(os.path.join(output_dir, "enhanced"), exist_ok=True)
+    if debug:
+        os.makedirs(os.path.join(output_dir, "debug"), exist_ok=True)
+
+    # Loop principale di preprocessing
+    for file_name in tqdm(image_files, desc="Preprocessing immagini", ncols=100):
+        img_path = os.path.join(input_dir, file_name)
+        img = load_image(img_path)
+        if img is None:
+            continue
+
+        try:
+            # Esegue preprocessing completo (enhancement, binarizzazione, thinning)
+            results = preprocess_fingerprint(img, debug_dir=None)
+            enhanced = results.get("enhanced", img)
+
+            # Salva immagine principale migliorata
+            base_name = os.path.splitext(file_name)[0]
+            out_path = os.path.join(output_dir, "enhanced", f"{base_name}_enhanced.png")
+            cv2.imwrite(out_path, enhanced)
+
+            # Se debug, salva le fasi intermedie
+            if debug:
+                debug_dir = os.path.join(output_dir, "debug", base_name)
+                save_debug_images(results, debug_dir, base_name)
+
+        except Exception as e:
+            print(f"[ERRORE] Preprocessing fallito per {file_name}: {e}")
+            traceback.print_exc()
+
+    print("\nPreprocessing completato con successo!")
+    print(f"Risultati salvati in: {output_dir}")
+
+# ================================================
 # ENTRY POINT
-# ==========================
+# ================================================
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Esegue il preprocessing delle immagini.")
-    parser.add_argument("--test", action="store_true", help="Usa solo 10 immagini per test.")
+    parser = argparse.ArgumentParser(description="Esecuzione pipeline di preprocessing impronte")
+    parser.add_argument("--input", type=str, required=True, help="Directory contenente le immagini grezze")
+    parser.add_argument("--output", type=str, default="outputs/preprocessed", help="Directory di output")
+    parser.add_argument("--no-debug", action="store_true", help="Non salvare le immagini intermedie di debug")
     args = parser.parse_args()
-    main(test_mode=args.test)
+
+    run_preprocessing(
+        input_dir=args.input,
+        output_dir=args.output,
+        debug=not args.no_debug
+    )

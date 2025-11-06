@@ -7,7 +7,7 @@ import os
 # PATH PRINCIPALI
 # ----------------------------
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
-
+DATASET = os.path.abspath("dataset/DBII")
 DATASET_DIR = os.path.join(BASE_DIR, "data", "metadata")
 PROCESSED_DIR = os.path.join(BASE_DIR, "data", "processed")
 FEATURES_DIR = os.path.join(BASE_DIR, "data", "features")

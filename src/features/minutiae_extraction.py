@@ -81,7 +81,7 @@ def visualize_minutiae(skeleton: np.ndarray, minutiae: list, output_path: str):
 def process_skeleton(skeleton_path: str, out_json: str, out_vis: str = None):
     skeleton = cv2.imread(skeleton_path, cv2.IMREAD_GRAYSCALE)
     if skeleton is None:
-        print(f"⚠️ Impossibile leggere {skeleton_path}")
+        print(f"Impossibile leggere {skeleton_path}")
         return
 
     skeleton_clean = clean_skeleton(skeleton)
@@ -97,7 +97,7 @@ def process_skeleton(skeleton_path: str, out_json: str, out_vis: str = None):
     )
 
     if not minutiae:
-        print(f"⚠️ Nessuna minutia utile trovata in {skeleton_path}")
+        print(f"Nessuna minutia utile trovata in {skeleton_path}")
 
     os.makedirs(os.path.dirname(out_json), exist_ok=True)
     minutiae_sorted = sorted(minutiae, key=lambda x: (x["type"], x["y"], x["x"]))
@@ -167,12 +167,12 @@ def main(test_mode=False, debug_vis=True):
     df = pd.read_csv(CATALOG_CSV)
     if test_mode:
         df = df.head(10)
-        print(f"⚙️ Modalità TEST attiva: processate solo {len(df)} immagini.")
+        print(f"Modalità TEST attiva: processate solo {len(df)} immagini.")
 
     output_dir = os.path.join(FEATURES_DIR, "minutiae")
     os.makedirs(output_dir, exist_ok=True)
 
-    print(f"🧬 Estrazione minutiae da {len(df)} immagini...\n")
+    print(f"Estrazione minutiae da {len(df)} immagini...\n")
     for _, row in tqdm(df.iterrows(), total=len(df)):
         base_name = os.path.splitext(os.path.basename(row["path"]))[0]
         skeleton_path = os.path.join(PROCESSED_DIR, base_name, "skeleton.png")
@@ -181,7 +181,7 @@ def main(test_mode=False, debug_vis=True):
         if os.path.exists(skeleton_path):
             process_skeleton(skeleton_path, out_json, out_vis)
         else:
-            print(f"⚠️ Skeleton mancante: {skeleton_path}")
+            print(f"Skeleton mancante: {skeleton_path}")
 
 # ==========================
 # ENTRY POINT CLI

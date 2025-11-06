@@ -1,61 +1,38 @@
 import sys
 import os
 import traceback
-
-# Aggiunge la root del progetto ai path importabili
+import faulthandler
+faulthandler.enable()
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # Importa i moduli della pipeline
 from config.config import ensure_dirs
-from config.config import PROCESSED_DIR, FINGERPRINT_MODEL
 from src.catalog.prepare_catalog import main as prepare_catalog
-from src.preprocessing.run_preprocessing import main as run_preprocessing
+from src.preprocessing.run_preprocessing import run_preprocessing
 from src.features.minutiae_extraction import main as extract_minutiae
-from src.models.descriptors_deep import train_deep_descriptor
-from src.matching.run_matching import main as run_matching
-from src.evaluation.evaluate_results import main as evaluate
+from config.config import DATASET, PROCESSED_DIR
 
 def run_pipeline():
     ensure_dirs()
 
     try:
-        print("\n[1/6] 🔍 Preparazione catalogo...")
+        print("\n[1/6] Preparazione catalogo...")
         prepare_catalog()
 
-        print("\n[2/6] 🧼 Preprocessing immagini...")
-        run_preprocessing(test_mode=True)
+        print("\n[2/6] Preprocessing immagini...")
+        run_preprocessing(input_dir=DATASET, output_dir=PROCESSED_DIR, debug=True, small_subset=True)
 
-        print("\n[3/6] 🔩 Estrazione minutiae...")
-        extract_minutiae(test_mode=True)
+        print("\n[3/6] Estrazione minutiae...")
+        # extract_minutiae(test_mode=True)
 
-        """ print("   ↳ Avvio training modello deep CNN...")
-        train_deep_descriptor(
-            dataset_dir=PROCESSED_DIR,
-            save_path=FINGERPRINT_MODEL,
-            epochs=2,
-            batch_size=8,
-            embedding_dim=256,
-            lr=1e-4,
-            backbone="resnet18",
-            device="mps",
-            pretrained=True,
-            use_amp=True
-        ) """
-
-        print("\n[5/6] 🤝 Matching e fusione punteggi...")
-        run_matching(test_mode=True)
-
-        """ print("\n[6/6] 📊 Valutazione risultati...")
-        evaluate() """
-
-        print("\n✅ Pipeline completata con successo!")
+        print("\nPipeline completata con successo!")
 
     except Exception as e:
-        print(f"\n❌ Errore durante l'esecuzione della pipeline:\n{e}")
+        print(f"\nErrore durante l'esecuzione della pipeline:\n{e}")
         traceback.print_exc()
 
 if __name__ == "__main__":
     print("====================================")
-    print("🧬 MULTIMODAL BIOMETRIC PIPELINE")
+    print("  MULTIMODAL BIOMETRIC PIPELINE")
     print("====================================")
     run_pipeline()
