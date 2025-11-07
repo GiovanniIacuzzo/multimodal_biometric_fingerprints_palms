@@ -306,6 +306,40 @@ Per eseguire correttamente la pipeline, segui i passaggi descritti di seguito:
 - Assicurati che il file contenga tutte le variabili necessarie per:
   - Eseguire la pipeline  
   - Connettersi al database
+- Es di come deve essere il `.env`:
+
+```bash
+PGHOST=localhost
+PGDATABASE=biometria
+PGUSER=postgres
+PGPASSWORD=super_secret_password
+PGPORT=5432
+
+PRUNE_ITERS=2
+PRUNE_AREA=2
+ORIENT_SIGMA=3.0
+
+CLAHE_CLIP_LIMIT=2.0
+CLAHE_TILE_SIZE=8
+
+BILATERAL_D=5
+BILATERAL_SIGMA_COLOR=50
+BILATERAL_SIGMA_SPACE=7
+GAUSSIAN_SIGMA=0.7
+
+SAUVOLA_WIN=25
+SAUVOLA_K=0.2
+LOCAL_PATCH=64
+MIN_OBJ_SIZE=30
+MAX_HOLE_SIZE=100
+MIN_SEGMENT_AREA=5000
+
+BLOCK_SIZE=16
+ORIENT_SIGMA=7.0
+ENERGY_THRESHOLD=1e-2
+REL_THRESHOLD=0.2
+VIS_SCALE=8
+```
 
 ### 5. Esecuzione della pipeline
 - Attiva l’ambiente Conda corretto:
