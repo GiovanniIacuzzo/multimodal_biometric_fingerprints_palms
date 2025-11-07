@@ -85,6 +85,7 @@ COHERENCE_THRESHOLD = _getenv_float("COHERENCE_THRESHOLD", 0.15)
 MIN_DISTANCE        = _getenv_float("MIN_DISTANCE", 6.0)
 ORIENTATION_WINDOW  = _getenv_int("ORIENTATION_WINDOW", 15)
 MARGIN              = _getenv_int("MARGIN", 35)
+ORIENT_SIGMA        = _getenv_float("ORIENT_SIGMA", 7.0)
 
 # Preprocessing immagini
 CLAHE_CLIP_LIMIT    = _getenv_float("CLAHE_CLIP_LIMIT", 2.0)

@@ -117,14 +117,12 @@ def binarize(img: np.ndarray) -> np.ndarray:
 # ================================================
 # SEGMENTATION
 # ================================================
-def segment_fingerprint(img: np.ndarray, debug_dir: Optional[str] = None) -> np.ndarray:
+def segment_fingerprint(img: np.ndarray, debug_dir: Optional[str] = None) -> (np.ndarray, np.ndarray):
     """
-    Crop robusto dell'impronta:
-    - lavoriamo su grayscale
-    - applichiamo un threshold (Otsu) + morfologia per rimuovere rumore
-    - prendiamo il contorno più grande e il suo convex hull
-    - ritagliamo la bounding box con un margine (parametro)
-    - se il risultato è troppo piccolo / grande -> fallback più aggressivo
+    Segmentazione robusta dell'impronta con generazione della maschera.
+    Restituisce:
+      - cropped: impronta ritagliata
+      - cropped_mask: maschera binaria (255=impronta, 0=sfondo)
     """
     if len(img.shape) == 3:
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -132,98 +130,63 @@ def segment_fingerprint(img: np.ndarray, debug_dir: Optional[str] = None) -> np.
         gray = img.copy()
 
     h, w = gray.shape
-
-    # leggera equalizzazione per stabilizzare Otsu
     clahe = cv2.createCLAHE(clipLimit=getattr(config, "CLAHE_CLIP_LIMIT", 2.0),
                             tileGridSize=(getattr(config, "CLAHE_TILE_SIZE", 8),
                                           getattr(config, "CLAHE_TILE_SIZE", 8)))
     stab = clahe.apply(gray)
-
     blur = cv2.GaussianBlur(stab, (5, 5), 0)
 
-    # Otsu threshold
+    # Threshold Otsu
     try:
         _, mask = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     except Exception:
-        # fallback: global mean
         _, mask = cv2.threshold(blur, int(np.mean(blur)), 255, cv2.THRESH_BINARY)
 
-    # In caso il foreground sia chiaro (impronta chiara su sfondo scuro), invertiamo
+    # Se foreground è chiaro -> invertiamo
     fg_mean = np.mean(gray[mask == 255]) if np.any(mask == 255) else 0
     bg_mean = np.mean(gray[mask == 0]) if np.any(mask == 0) else 0
     if fg_mean > bg_mean:
         mask = cv2.bitwise_not(mask)
 
-    # Riduzione rumore e chiusura per ottenere una regione compatta
+    # Morfologia per regioni compatte
     k = getattr(config, "SEG_KERNEL_SIZE", 15)
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 
-    # Keep largest contour; se vuoto fallback su tutta l'immagine
+    # Contorno più grande
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
-        return gray
+        return gray, np.ones_like(gray, dtype=np.uint8) * 255
 
-    # filtra per area (scarta piccole macchie)
-    min_area = getattr(config, "MIN_SEGMENT_AREA", 500)
-    contours = [c for c in contours if cv2.contourArea(c) >= min_area]
+    contours = [c for c in contours if cv2.contourArea(c) >= getattr(config, "MIN_SEGMENT_AREA", 500)]
     if not contours:
-        # fallback aggressivo: dilata e riprova
-        mask2 = cv2.dilate(mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)), iterations=2)
-        contours, _ = cv2.findContours(mask2, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if not contours:
-            return gray
-        contours = sorted(contours, key=cv2.contourArea, reverse=True)
+        return gray, np.ones_like(gray, dtype=np.uint8) * 255
 
     largest = max(contours, key=cv2.contourArea)
-
-    # Convex hull per avere contorno più regolare
     hull = cv2.convexHull(largest)
     mask_hull = np.zeros_like(mask)
     cv2.drawContours(mask_hull, [hull], -1, 255, thickness=-1)
 
-    # calcola bbox del hull e applica margin
+    # Crop con margine
     x, y, w_box, h_box = cv2.boundingRect(hull)
-    margin = getattr(config, "SEG_CROP_MARGIN", 10)  # px margine intorno al crop
-    x0 = max(0, x - margin)
-    y0 = max(0, y - margin)
-    x1 = min(gray.shape[1], x + w_box + margin)
-    y1 = min(gray.shape[0], y + h_box + margin)
+    margin = getattr(config, "SEG_CROP_MARGIN", 10)
+    x0, y0 = max(0, x - margin), max(0, y - margin)
+    x1, y1 = min(gray.shape[1], x + w_box + margin), min(gray.shape[0], y + h_box + margin)
 
     cropped = gray[y0:y1, x0:x1]
+    hull_crop = mask_hull[y0:y1, x0:x1]
+    cropped_mask = (hull_crop > 0).astype(np.uint8) * 255
 
-    # Se il crop è troppo piccolo rispetto all'immagine -> fallback (probabile errore)
-    min_frac = getattr(config, "SEG_MIN_FRAC", 0.05)
-    if (cropped.shape[0] * cropped.shape[1]) < min_frac * (h * w):
-        # fallback: ritorna grayscale centrato con dimensione proporzionale
-        csize = int(min(h, w) * 0.8)
-        cy = h // 2
-        cx = w // 2
-        sx = max(0, cx - csize // 2)
-        sy = max(0, cy - csize // 2)
-        cropped = gray[sy:sy + csize, sx:sx + csize]
-
-    # opzionale: mask hull nel crop per rimuovere background residuo
-    try:
-        hull_crop = mask_hull[y0:y1, x0:x1]
-        if hull_crop.shape == cropped.shape:
-            # applichiamo la maschera al crop per rimuovere bordi residui
-            cropped = cv2.bitwise_and(cropped, cropped, mask=(hull_crop > 0).astype(np.uint8) * 255)
-    except Exception:
-        pass
+    # Applica maschera per pulizia bordo
+    cropped = cv2.bitwise_and(cropped, cropped, mask=cropped_mask)
 
     if debug_dir:
-        # salva debug images
-        try:
-            os.makedirs(debug_dir, exist_ok=True)
-            cv2.imwrite(os.path.join(debug_dir, "segment_mask.png"), mask)
-            cv2.imwrite(os.path.join(debug_dir, "segment_hull.png"), mask_hull)
-            cv2.imwrite(os.path.join(debug_dir, "segment_cropped.png"), cropped)
-        except Exception:
-            pass
+        os.makedirs(debug_dir, exist_ok=True)
+        cv2.imwrite(os.path.join(debug_dir, "segment_cropped.png"), cropped)
+        cv2.imwrite(os.path.join(debug_dir, "segment_mask.png"), cropped_mask)
 
-    return cropped
+    return cropped, cropped_mask
 
 # ================================================
 # ORIENTATION MAP
@@ -232,8 +195,12 @@ def compute_orientation_map(img: np.ndarray,
                             block_size: int = 16,
                             smooth_sigma: float = 3.0,
                             invert_if_needed: bool = True,
-                            smooth_orientation_sigma: float = 3.0):
-    # --- ensure grayscale float in [0,1] ---
+                            smooth_orientation_sigma: float = 3.0,
+                            mask: Optional[np.ndarray] = None):
+    """
+    Calcola il campo di orientamento ridotto a blocchi, filtrando con una mask opzionale.
+    """
+    # --- Preprocessing ---
     if img.dtype == np.uint8:
         f = img.astype(np.float32) / 255.0
     else:
@@ -245,30 +212,25 @@ def compute_orientation_map(img: np.ndarray,
         if np.mean(f[f > np.median(f)]) > np.mean(f[f <= np.median(f)]):
             f = 1.0 - f
 
-    # slight smoothing before gradient
-    f_s = gaussian_filter(f, sigma=max(0.5, smooth_sigma/2.0))
+    f_s = gaussian_filter(f, sigma=max(0.5, smooth_sigma / 2.0))
 
-    # gradients
+    # Gradienti
     Gx = cv2.Sobel((f_s * 255).astype(np.float32), cv2.CV_32F, 1, 0, ksize=3)
     Gy = cv2.Sobel((f_s * 255).astype(np.float32), cv2.CV_32F, 0, 1, ksize=3)
 
-    # structure tensor
     Gxx = gaussian_filter(Gx * Gx, sigma=smooth_sigma)
     Gyy = gaussian_filter(Gy * Gy, sigma=smooth_sigma)
     Gxy = gaussian_filter(Gx * Gy, sigma=smooth_sigma)
 
-    # reliability
-    reliability = np.sqrt((Gxx - Gyy)**2 + 4.0 * Gxy**2)
+    reliability = np.sqrt((Gxx - Gyy) ** 2 + 4.0 * Gxy ** 2)
     rmin, rmax = np.percentile(reliability, [2, 98])
     reliability = np.clip((reliability - rmin) / (rmax - rmin + 1e-12), 0.0, 1.0)
 
-    # local orientation (gradient)
     orientation = 0.5 * np.arctan2(2.0 * Gxy, (Gxx - Gyy) + 1e-12)
-    orientation = orientation + np.pi / 2.0  # ridges orientation
+    orientation = orientation + np.pi / 2.0
 
     h, w = f.shape
-    n_by = h // block_size
-    n_bx = w // block_size
+    n_by, n_bx = h // block_size, w // block_size
     orient_blocks = np.zeros((n_by, n_bx), dtype=np.float32)
     rel_blocks = np.zeros((n_by, n_bx), dtype=np.float32)
 
@@ -276,29 +238,34 @@ def compute_orientation_map(img: np.ndarray,
         for bx in range(n_bx):
             y0, y1 = by * block_size, (by + 1) * block_size
             x0, x1 = bx * block_size, (bx + 1) * block_size
+
+            if mask is not None:
+                submask = mask[y0:y1, x0:x1]
+                # salta blocchi fuori area impronta
+                if np.mean(submask > 0) < 0.3:
+                    continue
+
             block_theta = orientation[y0:y1, x0:x1]
             block_r = reliability[y0:y1, x0:x1]
             if block_theta.size == 0:
                 continue
+
             wts = block_r.flatten() + 1e-6
             s = np.sum(wts * np.sin(2.0 * block_theta).flatten())
             c = np.sum(wts * np.cos(2.0 * block_theta).flatten())
             orient_blocks[by, bx] = 0.5 * np.arctan2(s, c)
             rel_blocks[by, bx] = np.mean(block_r)
 
-    # --- Smoothing direzionale del campo di orientamento ---
+    # Smoothing direzionale
     sin2 = np.sin(2.0 * orient_blocks)
     cos2 = np.cos(2.0 * orient_blocks)
     sin2_s = gaussian_filter(sin2, sigma=smooth_orientation_sigma)
     cos2_s = gaussian_filter(cos2, sigma=smooth_orientation_sigma)
     orient_blocks = 0.5 * np.arctan2(sin2_s, cos2_s)
 
-    # --- Upsample ---
     orient_img = cv2.resize(orient_blocks, (w, h), interpolation=cv2.INTER_LINEAR)
     rel_img = cv2.resize(rel_blocks, (w, h), interpolation=cv2.INTER_LINEAR)
-
-    # normalize angle
-    orient_img = (orient_img + np.pi/2) % np.pi - np.pi/2
+    orient_img = (orient_img + np.pi / 2) % np.pi - np.pi / 2
 
     return orient_blocks, orient_img, rel_img
 
@@ -308,7 +275,11 @@ def visualize_orientation(img: np.ndarray,
                           block_size: int = 16,
                           scale: int = 8,
                           rel_thresh: float = 0.2,
+                          mask: Optional[np.ndarray] = None,
                           color=(0, 0, 255)):
+    """
+    Visualizza il campo di orientamento con filtraggio tramite mask.
+    """
     if len(img.shape) == 2:
         vis = cv2.cvtColor((np.clip(img, 0, 255)).astype(np.uint8), cv2.COLOR_GRAY2BGR)
     else:
@@ -324,11 +295,14 @@ def visualize_orientation(img: np.ndarray,
             cx = int(bx * step + half)
             if cy >= h or cx >= w:
                 continue
-            if reliability_img is not None:
-                if reliability_img[cy, cx] < rel_thresh:
-                    continue
-            angle = orient_img[cy, cx]
 
+            if mask is not None and mask[cy, cx] == 0:
+                continue  # ignora sfondo
+
+            if reliability_img is not None and reliability_img[cy, cx] < rel_thresh:
+                continue
+
+            angle = orient_img[cy, cx]
             dx = int(round(scale * np.cos(angle)))
             dy = int(round(scale * np.sin(angle)))
             x1, y1 = max(0, cx - dx), max(0, cy - dy)
@@ -336,7 +310,6 @@ def visualize_orientation(img: np.ndarray,
 
             cv2.line(vis, (x1, y1), (x2, y2), color, 1, cv2.LINE_AA)
 
-    # overlay per miglior contrasto
     gray2bgr = cv2.cvtColor((np.clip(img, 0, 255)).astype(np.uint8), cv2.COLOR_GRAY2BGR)
     overlay = cv2.addWeighted(vis, 0.8, gray2bgr, 0.2, 0)
     return overlay
@@ -357,42 +330,70 @@ def thinning_and_cleaning(binary_img: np.ndarray) -> np.ndarray:
 # ================================================
 def preprocess_fingerprint(img: np.ndarray, debug_dir: Optional[str] = None) -> Dict[str, np.ndarray]:
     """
-    Pipeline integrata che usa il nuovo segment_fingerprint e compute_orientation_map.
+    Pipeline completa per il preprocessing di un'impronta digitale.
+    Include:
+        - Normalizzazione e denoising
+        - Segmentazione e maschera foreground
+        - Binarizzazione e thinning
+        - Calcolo campo di orientamento con maschera
+        - Visualizzazione orientamento (solo area impronta)
     """
     try:
+        # 1. Normalizzazione e rimozione rumore
         normalized = normalize_image(img)
         denoised = denoise_image(normalized)
 
-        # segmento e crop
-        segmented = segment_fingerprint(denoised, debug_dir=debug_dir)
+        # 2. Segmentazione con restituzione della maschera
+        segmented, mask = segment_fingerprint(denoised, debug_dir=debug_dir)
 
+        # 3. Binarizzazione e thinning (scheletro)
         binary = binarize(segmented)
         skeleton = thinning_and_cleaning(binary)
 
-        orient_blocks, orient_img, reliability = compute_orientation_map(segmented)
+        # 4. Calcolo campo di orientamento vincolato alla maschera
+        orient_blocks, orient_img, reliability = compute_orientation_map(
+            segmented,
+            block_size=16,
+            smooth_sigma=3.0,
+            invert_if_needed=True,
+            smooth_orientation_sigma=3.0,
+            mask=mask
+        )
+
+        # 5. Visualizzazione del campo di orientamento
         orientation_vis = visualize_orientation(
             img=segmented,
             orient_img=orient_img,
+            reliability_img=reliability,
             block_size=16,
             scale=7,
-            rel_thresh=0.1
+            rel_thresh=0.1,
+            mask=mask
         )
 
-        # salva debug se richiesto
+        # 6. Salvataggio debug (se richiesto)
         if debug_dir:
             try:
                 os.makedirs(debug_dir, exist_ok=True)
-                cv2.imwrite(os.path.join(debug_dir, "segmented_crop.png"), segmented)
+                cv2.imwrite(os.path.join(debug_dir, "normalized.png"), normalized)
+                cv2.imwrite(os.path.join(debug_dir, "denoised.png"), denoised)
+                cv2.imwrite(os.path.join(debug_dir, "segmented.png"), segmented)
+                cv2.imwrite(os.path.join(debug_dir, "mask.png"), mask)
+                cv2.imwrite(os.path.join(debug_dir, "binary.png"), binary)
+                cv2.imwrite(os.path.join(debug_dir, "skeleton.png"), skeleton)
                 cv2.imwrite(os.path.join(debug_dir, "orientation_vis.png"), orientation_vis)
             except Exception:
-                pass
+                pass  # non bloccare la pipeline se il salvataggio fallisce
 
+        # 7. Output strutturato
         return {
             "normalized": normalized,
             "denoised": denoised,
             "segmented": segmented,
+            "mask": mask,
             "binary": binary,
             "skeleton": skeleton,
+            "orientation_blocks": orient_blocks,
             "orientation_map": orient_img,
             "orientation_vis": orientation_vis,
             "reliability": reliability,
