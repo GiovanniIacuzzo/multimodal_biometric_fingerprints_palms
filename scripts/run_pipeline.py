@@ -2,41 +2,54 @@ import sys
 import os
 import traceback
 import faulthandler
+
 faulthandler.enable()
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # Importa i moduli della pipeline
-from config.config import ensure_dirs
+from config import config
 from src.catalog.prepare_catalog import main as prepare_catalog
 from src.preprocessing.run_preprocessing import run_preprocessing
 from src.features.extract_features import main as extract_minutiae
 
-DATASET = os.path.abspath("dataset/DBII")
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
-PROCESSED_DIR = os.path.join(BASE_DIR, "data", "processed")
-
 
 def run_pipeline():
-    ensure_dirs()
+    # Assicurati che le directory esistano
+    for path in [
+        config.DATA_DIR,
+        config.PROCESSED_DIR,
+        config.FEATURES_DIR,
+        config.METADATA_DIR,
+        config.LOG_DIR,
+        config.TEMP_DIR
+    ]:
+        os.makedirs(path, exist_ok=True)
 
     try:
+        print("====================================")
+        print("  MULTIMODAL BIOMETRIC PIPELINE")
+        print("====================================")
+
         print("\n[1/6] Preparazione catalogo...")
-        prepare_catalog()
+        prepare_catalog()  # userà internamente config.METADATA_DIR
 
         print("\n[2/6] Preprocessing immagini...")
-        run_preprocessing(input_dir=DATASET, output_dir=PROCESSED_DIR, debug=True, small_subset=True)
+        run_preprocessing(
+            input_dir=config.DATASET_DIR,
+            output_dir=config.PROCESSED_DIR,
+            debug=True,
+            small_subset=True
+        )
 
         print("\n[3/6] Estrazione minutiae...")
-        extract_minutiae()
+        extract_minutiae()  # anche qui potrà leggere da config.FEATURES_DIR
 
-        print("\nPipeline completata con successo!")
+        print("\n✅ Pipeline completata con successo!")
 
     except Exception as e:
-        print(f"\nErrore durante l'esecuzione della pipeline:\n{e}")
+        print(f"\n❌ Errore durante l'esecuzione della pipeline:\n{e}")
         traceback.print_exc()
 
+
 if __name__ == "__main__":
-    print("====================================")
-    print("  MULTIMODAL BIOMETRIC PIPELINE")
-    print("====================================")
     run_pipeline()

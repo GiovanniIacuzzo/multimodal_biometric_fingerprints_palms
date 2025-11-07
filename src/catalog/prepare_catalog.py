@@ -1,28 +1,9 @@
-"""
-prepare_catalog.py
-------------------
-Crea il catalogo del dataset PolyU HRF DBII scansionando la directory delle immagini .jpg
-e generando un file CSV con i metadati necessari.
-
-Output:
-    data/metadata/catalog.csv
-"""
-
 import os
 import re
 import cv2
 import pandas as pd
+from config import config
 
-DATASET_DIR = os.path.abspath("dataset/DBII/metadata")
-
-# ==============================
-# CONFIGURAZIONE
-# ==============================
-
-DATASET_ROOT = "dataset/DBII"
-OUTPUT_CSV = os.path.join(DATASET_DIR, "catalog.csv")
-
-# Regex per parsing del nome file: es. 001_2_1.jpg
 FILENAME_PATTERN = re.compile(r"(\d+)_(\d+)_(\d+)\.jpg$", re.IGNORECASE)
 
 
@@ -53,13 +34,15 @@ def scan_dataset(dataset_root: str):
                 # Carica l'immagine per ottenere dimensioni
                 try:
                     img = cv2.imread(file_path, cv2.IMREAD_GRAYSCALE)
+                    if img is None:
+                        raise ValueError("Immagine non leggibile o corrotta.")
                     height, width = img.shape
                 except Exception as e:
                     print(f"[ERRORE] Impossibile leggere {file_path}: {e}")
                     continue
 
                 image_id = os.path.splitext(file)[0]
-                record = {
+                records.append({
                     "image_id": image_id,
                     "subject_id": subject_id,
                     "finger_id": finger_id,
@@ -68,8 +51,7 @@ def scan_dataset(dataset_root: str):
                     "width": width,
                     "height": height,
                     "format": "jpg",
-                }
-                records.append(record)
+                })
 
     return records
 
@@ -86,12 +68,17 @@ def save_catalog(records, output_csv):
 
 
 def main():
-    print("Scansione del dataset PolyU HRF DBII...")
-    records = scan_dataset(DATASET_ROOT)
+    print("📁 Scansione del dataset PolyU HRF DBII...")
+
+    dataset_root = config.DATASET_DIR
+    output_csv = os.path.join(config.METADATA_DIR, "catalog.csv")
+
+    records = scan_dataset(dataset_root)
     if not records:
-        print("Nessuna immagine trovata. Controlla il percorso del dataset.")
+        print("⚠️ Nessuna immagine trovata. Controlla il percorso del dataset.")
         return
-    save_catalog(records, OUTPUT_CSV)
+
+    save_catalog(records, output_csv)
 
 
 if __name__ == "__main__":

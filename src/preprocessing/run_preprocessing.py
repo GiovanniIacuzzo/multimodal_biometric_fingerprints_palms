@@ -5,8 +5,10 @@ import time
 import traceback
 import numpy as np
 from tqdm import tqdm
+from config import config
 from src.db.database import get_connection
 from src.preprocessing.enhancement import preprocess_fingerprint
+
 
 # ================================================
 # UTILITY FUNZIONI
@@ -36,7 +38,9 @@ def save_debug_images(results: dict, output_dir: str, base_name: str):
         except Exception:
             print(f"[ATTENZIONE] Fallito salvataggio di {filename}")
 
+
 def save_image_record(subject_id, filename, path_original, path_enhanced, orientation_mean=None, preprocessing_time=None):
+    """Registra i metadati nel database."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -50,13 +54,14 @@ def save_image_record(subject_id, filename, path_original, path_enhanced, orient
     conn.close()
     return image_id
 
+
 # ================================================
 # MAIN PIPELINE
 # ================================================
 
 def run_preprocessing(
-    input_dir: str,
-    output_dir: str = "outputs/preprocessed",
+    input_dir: str = config.DATASET_DIR,
+    output_dir: str = config.PROCESSED_DIR,
     debug: bool = True,
     small_subset: bool = False
 ):
@@ -110,8 +115,9 @@ def run_preprocessing(
                 debug_dir = os.path.join(output_dir, "debug", base_name)
                 save_debug_images(results, debug_dir, base_name)
 
+            # Salva nel DB (facoltativo)
             image_id = save_image_record(
-                subject_id=None,  # puoi derivarlo dal nome file se serve
+                subject_id=None,  # opzionale: derivabile dal nome file
                 filename=file_name,
                 path_original=img_path,
                 path_enhanced=out_path,
@@ -125,18 +131,21 @@ def run_preprocessing(
     print("\nPreprocessing completato con successo!")
     print(f"Risultati salvati in: {output_dir}")
 
+
 # ================================================
 # ENTRY POINT
 # ================================================
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Esecuzione pipeline di preprocessing impronte")
-    parser.add_argument("--input", type=str, required=True, help="Directory contenente le immagini grezze")
-    parser.add_argument("--output", type=str, default="outputs/preprocessed", help="Directory di output")
+    parser.add_argument("--input", type=str, default=config.DATASET_DIR, help="Directory contenente le immagini grezze")
+    parser.add_argument("--output", type=str, default=config.PROCESSED_DIR, help="Directory di output")
     parser.add_argument("--no-debug", action="store_true", help="Non salvare le immagini intermedie di debug")
+    parser.add_argument("--small", action="store_true", help="Usa solo un piccolo subset di immagini per test")
     args = parser.parse_args()
 
     run_preprocessing(
         input_dir=args.input,
         output_dir=args.output,
-        debug=not args.no_debug
+        debug=not args.no_debug,
+        small_subset=args.small
     )
