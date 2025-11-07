@@ -9,7 +9,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from config.config import ensure_dirs
 from src.catalog.prepare_catalog import main as prepare_catalog
 from src.preprocessing.run_preprocessing import run_preprocessing
-from src.features.minutiae_extraction import main as extract_minutiae
+from src.features.extract_features import main as extract_minutiae
 from config.config import DATASET, PROCESSED_DIR
 
 def run_pipeline():
@@ -23,7 +23,7 @@ def run_pipeline():
         run_preprocessing(input_dir=DATASET, output_dir=PROCESSED_DIR, debug=True, small_subset=True)
 
         print("\n[3/6] Estrazione minutiae...")
-        # extract_minutiae(test_mode=True)
+        extract_minutiae()
 
         print("\nPipeline completata con successo!")
 
