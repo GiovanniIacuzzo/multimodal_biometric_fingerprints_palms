@@ -39,7 +39,7 @@ La sperimentazione è basata sul dataset **PolyU HRF DBII**, uno dei benchmark p
 | **Numero immagini per soggetto** | 10 |
 | **Totale immagini** | 1480 |
 | **Risoluzione** | 1200 dpi (≈ 21 µm/pixel) |
-| **Formato** | TIFF, 8-bit grayscale |
+| **Formato** | jpg, 8-bit grayscale |
 | **Dimensioni tipiche** | 240×320 o superiori |
 
 Ogni soggetto è rappresentato da 10 campioni acquisiti in sessioni differenti, includendo variazioni di pressione, rotazione e parziale sovrapposizione.  
