@@ -12,7 +12,8 @@ import os
 import re
 import cv2
 import pandas as pd
-from config.config import DATASET_DIR
+
+DATASET_DIR = os.path.abspath("dataset/DBII/metadata")
 
 # ==============================
 # CONFIGURAZIONE
