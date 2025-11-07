@@ -24,6 +24,16 @@ else:
     print("[AVVISO] File config_path.yml non trovato, uso percorsi di default.")
     path_cfg = {}
 
+# =====================================================
+# 2. Configurazione database
+# =====================================================
+DB_CONFIG = {
+    "host": os.getenv("PGHOST", "localhost"),
+    "dbname": os.getenv("PGDATABASE", "biometria"),
+    "user": os.getenv("PGUSER", "postgres"),
+    "password": os.getenv("PGPASSWORD", "postgres"),
+    "port": os.getenv("PGPORT", "5432"),
+}
 
 # ==============================
 # PATH CONFIGURATION
