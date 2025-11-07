@@ -1,36 +1,34 @@
-# src/features/minutiae_extraction.py
 import os
 import cv2
+import time
 import json
 import logging
 import numpy as np
 from tqdm import tqdm
-from typing import List, Dict, Tuple
+from typing import List, Dict
 from scipy.spatial import cKDTree
-
+from src.features.post_processing import postprocess_minutiae
 from src.features.utils import (
     ensure_dir, save_debug_image,
-    clean_skeleton, compute_neighbor_count, compute_orientation_map
+    clean_skeleton, compute_neighbor_count
 )
 
 logger = logging.getLogger("minutiae_extractor")
 
 # =====================================================
-# 1. CN Lookup Table (8-neighborhood clockwise)
+# 1. CN Lookup Table
 # =====================================================
 _CN_LUT = None
 def _build_cn_lut() -> np.ndarray:
     lut = np.zeros(256, dtype=np.uint8)
     for pat in range(256):
-        b = [(pat >> i) & 1 for i in range(8)]  # [p0..p7]
-        # CN definition: half of number of transitions between successive pairs in a circle
+        b = [(pat >> i) & 1 for i in range(8)]
         cn = sum(abs(b[i] - b[(i + 1) % 8]) for i in range(8)) // 2
         lut[pat] = cn
     return lut
 
 
 def compute_cn_map(skel: np.ndarray) -> np.ndarray:
-    """Compute crossing number map for skeleton."""
     global _CN_LUT
     if _CN_LUT is None:
         _CN_LUT = _build_cn_lut()
@@ -98,7 +96,7 @@ def local_orientation(gray: np.ndarray, x: int, y: int, window: int = 11) -> flo
 
 
 # =====================================================
-# 4. Process skeleton (no post-processing yet)
+# 4. Process skeleton
 # =====================================================
 def process_skeleton(path: str, params: dict, out_dir: str):
     img_name = os.path.splitext(os.path.basename(path))[0].replace("_skeleton", "")
@@ -111,58 +109,133 @@ def process_skeleton(path: str, params: dict, out_dir: str):
         logger.warning(f"Immagine non trovata o corrotta: {path}")
         return
 
+    # Pulizia e binarizzazione
     sk = clean_skeleton(img, invert_auto=True)
     sk_bin = (sk > 0).astype(np.uint8)
 
     raw = extract_minutiae_raw(sk_bin, min_dist=5)
 
-    # compute local orientation for visualization
-    gray = cv2.imread(path.replace("_skeleton.png", "_normalized.png"), cv2.IMREAD_GRAYSCALE)
+    norm_path = path.replace("_skeleton.png", "_normalized.png")
+    gray = cv2.imread(norm_path, cv2.IMREAD_GRAYSCALE)
     if gray is None:
         gray = sk_bin * 255
 
-    for m in raw:
-        m["orientation"] = local_orientation(gray, int(m["x"]), int(m["y"]))
-        m["quality"] = 1.0  # placeholder
-        m["coherence"] = 1.0  # placeholder
+    # -------------------------------------------------
+    # Post-processing e raffinamento minutiae
+    # -------------------------------------------------
+    processed = postprocess_minutiae(raw, sk_bin, gray, params)
 
-    # Save JSON + descriptor
     json.dump(raw, open(os.path.join(subj_dir, f"{img_name}_raw_minutiae.json"), "w"), indent=2)
-    desc = np.array([[m["x"], m["y"],
-                      0 if m["type"] == "ending" else 1,
-                      m["orientation"]]
-                     for m in raw], dtype=np.float32)
-    np.save(os.path.join(subj_dir, f"{img_name}_raw_descriptor.npy"), desc)
+    desc_raw = np.array([[m["x"], m["y"],
+                          0 if m["type"] == "ending" else 1,
+                          m.get("orientation", 0.0)]
+                         for m in raw], dtype=np.float32)
+    np.save(os.path.join(subj_dir, f"{img_name}_raw_descriptor.npy"), desc_raw)
 
-    # Visualization
-    vis = cv2.cvtColor(sk_bin * 255, cv2.COLOR_GRAY2BGR)
+    # POST-PROCESSED
+    json.dump(processed, open(os.path.join(subj_dir, f"{img_name}_minutiae.json"), "w"), indent=2)
+    desc_proc = np.array([[m["x"], m["y"],
+                           0 if m["type"] == "ending" else 1,
+                           m.get("orientation", 0.0),
+                           m.get("quality", 0.0),
+                           m.get("coherence", 0.0)]
+                          for m in processed], dtype=np.float32)
+    np.save(os.path.join(subj_dir, f"{img_name}_descriptor.npy"), desc_proc)
+
+    # -------------------------------------------------
+    # Visualizzazione RAW e POST
+    # -------------------------------------------------
+    vis_raw = cv2.cvtColor(sk_bin * 255, cv2.COLOR_GRAY2BGR)
     for m in raw:
         x, y = int(m["x"]), int(m["y"])
         color = (0, 255, 0) if m["type"] == "bifurcation" else (0, 0, 255)
-        cv2.circle(vis, (x, y), 4, color, -1)
-        x2 = int(x + 10 * np.cos(m["orientation"]))
-        y2 = int(y + 10 * np.sin(m["orientation"]))
-        cv2.line(vis, (x, y), (x2, y2), (255, 255, 0), 1)
+        cv2.circle(vis_raw, (x, y), 4, color, -1)
+    save_debug_image(os.path.join(subj_dir, f"{img_name}_raw_minutiae_vis.png"), vis_raw, normalize=False)
 
-    save_debug_image(os.path.join(subj_dir, f"{img_name}_raw_minutiae_vis.png"), vis, normalize=False)
+    vis_post = cv2.cvtColor(sk_bin * 255, cv2.COLOR_GRAY2BGR)
+    for m in processed:
+        x, y = int(m["x"]), int(m["y"])
+        color = (0, 255, 0) if m["type"] == "bifurcation" else (0, 0, 255)
+        cv2.circle(vis_post, (x, y), 4, color, -1)
+        # Disegna la direzione
+        ang = m.get("orientation", 0.0)
+        x2 = int(x + 10 * np.cos(ang))
+        y2 = int(y + 10 * np.sin(ang))
+        cv2.line(vis_post, (x, y), (x2, y2), (255, 255, 0), 1)
+    save_debug_image(os.path.join(subj_dir, f"{img_name}_minutiae_vis.png"), vis_post, normalize=False)
 
-    logger.info(f"[{subject_id}] raw minutiae: {len(raw)} saved in {subj_dir}")
+    # -------------------------------------------------
+    # Logging finale
+    # -------------------------------------------------
+    logger.info(f"[{subject_id}] RAW: {len(raw)} | POST: {len(processed)} minutiae salvate in {subj_dir}")
 
 
 # =====================================================
 # 5. Batch entrypoint
 # =====================================================
-def main(processed_dir="data/processed", features_dir="data/features", params=None):
+def main(processed_dir="data/processed", features_dir="data/features", params=None,
+         debug=False, small_subset=False):
+    """
+    Esegue la fase di estrazione e post-processing delle minutiae
+    per tutte le impronte preprocessate.
+    """
+    # === 1. Imposta directory di input/output ===
     input_dir = os.path.join(processed_dir, "debug")
     out_dir = os.path.join(features_dir, "minutiae")
     ensure_dir(out_dir)
+
     subdirs = [d for d in sorted(os.listdir(input_dir)) if os.path.isdir(os.path.join(input_dir, d))]
     paths = [os.path.join(input_dir, d, f"{d}_skeleton.png") for d in subdirs]
     paths = [p for p in paths if os.path.exists(p)]
 
+    if small_subset:
+        paths = paths[:10]
+        logger.info("Esecuzione in modalità 'small_subset' (solo 10 campioni).")
+
     logger.info(f"Trovati {len(paths)} skeleton da elaborare.")
-    for p in tqdm(paths, desc="Estrazione raw minutiae"):
+
+    # === 2. Parametri di default (se non forniti) ===
+    default_params = {
+        "min_distance": 8.0,
+        "orientation_window": 11,
+        "quality_window": 25,
+        "quality_threshold": 0.05,
+        "coherence_threshold": 0.05
+    }
+    if params is None:
+        params = default_params
+    else:
+        default_params.update(params)
+        params = default_params
+
+    # === 3. Elaborazione ===
+    summary = []
+    start_global = time.time()
+
+    for p in tqdm(paths, desc="Estrazione e post-processing minutiae"):
         try:
-            process_skeleton(p, params or {}, out_dir)
+            start = time.time()
+            process_skeleton(p, params, out_dir)
+            duration = time.time() - start
+            summary.append({"path": p, "time_sec": round(duration, 3)})
         except Exception as e:
-            logger.error(f"Errore su {p}: {e}", exc_info=True)
+            logger.error(f"Errore durante l'elaborazione di {p}: {e}", exc_info=True)
+
+    # === 4. Riassunto e statistiche globali ===
+    total_time = time.time() - start_global
+    avg_time = total_time / max(1, len(summary))
+    logger.info(f"Pipeline completata in {total_time:.2f}s (media {avg_time:.2f}s per immagine).")
+
+    # === 5. Salva report riassuntivo ===
+    summary_path = os.path.join(out_dir, "summary.json")
+    with open(summary_path, "w") as f:
+        json.dump({
+            "total_images": len(paths),
+            "processed": len(summary),
+            "average_time_sec": round(avg_time, 3),
+            "total_time_sec": round(total_time, 2),
+            "params": params,
+            "details": summary
+        }, f, indent=2)
+
+    logger.info(f"Report salvato in {summary_path}")
