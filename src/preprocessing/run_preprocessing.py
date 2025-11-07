@@ -7,7 +7,7 @@ import numpy as np
 from tqdm import tqdm
 from config import config
 from src.db.database import get_connection
-from src.preprocessing.enhancement import preprocess_fingerprint
+from preprocessing.fingerprint_preprocess import preprocess_fingerprint
 
 
 # ================================================

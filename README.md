@@ -309,24 +309,39 @@ Per eseguire correttamente la pipeline, segui i passaggi descritti di seguito:
 - Es di come deve essere il `.env`:
 
 ```bash
+# ===========================
+# DATABASE
+# ===========================
 PGHOST=localhost
 PGDATABASE=biometria
 PGUSER=postgres
 PGPASSWORD=super_secret_password
 PGPORT=5432
 
+# ===========================
+# PRUNING E ORIENTAMENTO
+# ===========================
 PRUNE_ITERS=2
 PRUNE_AREA=2
-ORIENT_SIGMA=3.0
+ORIENT_SIGMA=7.0
 
+# ===========================
+# CLAHE (Contrast Limited Adaptive Histogram Equalization)
+# ===========================
 CLAHE_CLIP_LIMIT=2.0
 CLAHE_TILE_SIZE=8
 
+# ===========================
+# FILTRI
+# ===========================
 BILATERAL_D=5
-BILATERAL_SIGMA_COLOR=50
-BILATERAL_SIGMA_SPACE=7
+BILATERAL_SIGMA_COLOR=50.0
+BILATERAL_SIGMA_SPACE=7.0
 GAUSSIAN_SIGMA=0.7
 
+# ===========================
+# SEGMENTAZIONE E BINARIZZAZIONE
+# ===========================
 SAUVOLA_WIN=25
 SAUVOLA_K=0.2
 LOCAL_PATCH=64
@@ -334,11 +349,14 @@ MIN_OBJ_SIZE=30
 MAX_HOLE_SIZE=100
 MIN_SEGMENT_AREA=5000
 
+# ===========================
+# PARAMETRI GENERALI E VISUALIZZAZIONE
+# ===========================
 BLOCK_SIZE=16
-ORIENT_SIGMA=7.0
-ENERGY_THRESHOLD=1e-2
+ENERGY_THRESHOLD=0.01
 REL_THRESHOLD=0.2
 VIS_SCALE=8
+
 ```
 
 ### 5. Esecuzione della pipeline
