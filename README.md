@@ -350,6 +350,7 @@ python -m scripts.run_pipeline
 
 ---
 
+> [!CAUTION]
 > Note:
 Il progetto è ancora in fase di sviluppo.
 
