@@ -1,160 +1,139 @@
 <h1 align="center">Multimodal Biometric Identification System</h1>
 
-> _Pipeline completa per l’elaborazione e l’analisi di impronte digitali basata sul dataset **PolyU HRF DBII** (Hong Kong Polytechnic University High Resolution Fingerprint Database II)._  
+<div align="center">
+  <img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python Version">
+  <img src="https://img.shields.io/badge/OpenCV-4.x-green" alt="OpenCV">
+  <img src="https://img.shields.io/badge/Numpy-Sklearn-yellow" alt="Libraries">
+  <img src="https://img.shields.io/badge/Status-Under%20Development-orange" alt="Status">
+</div>
+
+> _Pipeline completa per l’elaborazione e l’analisi di impronte digitali basata sul dataset **PolyU HRF DBII** (Hong Kong Polytechnic University High Resolution Fingerprint Database II)._
 
 ---
 
-## 🔍 Introduzione
+## 1. Introduzione
 
-Questo progetto implementa una **pipeline biometrica** per l’elaborazione e l’estrazione di feature da impronte digitali ad alta risoluzione.  
-L’obiettivo è fornire un framework sperimentale **robusto, riproducibile e scientificamente trasparente** per l’analisi delle impronte, dalla fase di acquisizione fino all’estrazione delle minutiae.
+Questo progetto implementa una **pipeline biometrica modulare** per l’elaborazione e l’estrazione di feature da impronte digitali ad alta risoluzione.  
+L’obiettivo principale è costruire un framework **robusto, riproducibile e sperimentalmente verificabile**, capace di affrontare le criticità più comuni nella biometria delle impronte:
 
-Ogni fase della pipeline è progettata per affrontare i problemi più comuni nelle immagini biometriche:
-- **rumore e contrasto non uniforme**,
-- **regioni di background e segmentazione imperfetta**,
-- **distorsioni locali e discontinuità delle ridge**.
+- variabilità del contrasto e della luminosità,
+- regioni di background e bordi non informativi,
+- rumore strutturale e discontinuità nelle ridge.
 
----
-
-## 🧬 Dataset: PolyU High Resolution Fingerprint Database II (PolyU HFR DBII)
-
-La pipeline è sviluppata e testata sul dataset **PolyU HRF DBII**, una delle più note basi di dati per l’analisi di impronte digitali ad alta risoluzione.
-
-### 📁 Caratteristiche del dataset
-
-- **Origine:** Department of Computing, The Hong Kong Polytechnic University  
-- **Nome completo:** High Resolution Fingerprint Database II (DBII)  
-- **Numero soggetti:** 148 individui  
-- **Numero immagini totali:** 148 × 10 = **1480 impronte**  
-- **Risoluzione:** 1200 dpi (pixel spacing ≈ 21 µm)  
-- **Formato file:** TIFF a 8-bit grayscale  
-- **Dimensione tipica:** 240×320 o superiore  
-
-Ogni soggetto è rappresentato da **10 immagini acquisite in sessioni diverse**, con variazioni di pressione, rotazione, e parziale sovrapposizione.  
-Questo rende il dataset ideale per testare algoritmi di **enhancement e robustezza strutturale** delle ridge.
+La pipeline è interamente implementata in **Python**, con il supporto di librerie scientifiche quali `NumPy`, `SciPy`, `OpenCV` e `scikit-image`.  
+Tutti i moduli sono stati sviluppati per mantenere **tracciabilità completa delle trasformazioni** e consentire analisi quantitative e qualitative sulle immagini biometriche.
 
 ---
 
-## ⚙️ Funzionamento Generale della Pipeline
+## 2. Dataset: PolyU High Resolution Fingerprint Database II (PolyU HRF DBII)
 
-La pipeline segue una sequenza di fasi ordinate, ciascuna con scopi e trasformazioni specifiche.  
-Ogni stadio produce **un output intermedio**, utilizzato come input per il successivo.
+La sperimentazione è basata sul dataset **PolyU HRF DBII**, uno dei benchmark più utilizzati per la ricerca sull’elaborazione di impronte digitali ad alta risoluzione.
 
-### 1️⃣ **Normalizzazione e Preprocessing Iniziale**
+### 2.1 Caratteristiche principali
 
-#### Obiettivo
-Rimuovere variazioni d’intensità e migliorare il contrasto tra ridge e valley.  
-Assicurare che ogni immagine presenti un range dinamico coerente prima della segmentazione.
+| Proprietà | Valore |
+|------------|--------|
+| **Origine** | Department of Computing, The Hong Kong Polytechnic University |
+| **Nome completo** | High Resolution Fingerprint Database II (DBII) |
+| **Numero soggetti** | 148 |
+| **Numero immagini per soggetto** | 10 |
+| **Totale immagini** | 1480 |
+| **Risoluzione** | 1200 dpi (≈ 21 µm/pixel) |
+| **Formato** | TIFF, 8-bit grayscale |
+| **Dimensioni tipiche** | 240×320 o superiori |
 
-#### Implementazione
-- **Normalizzazione lineare:**  
-  Ogni pixel `p` è rimappato come:  
-  $$
+Ogni soggetto è rappresentato da 10 campioni acquisiti in sessioni differenti, includendo variazioni di pressione, rotazione e parziale sovrapposizione.  
+Questo rende il dataset adatto allo studio della **robustezza dei metodi di enhancement** e alla valutazione della **consistenza topologica** delle ridge.
+
+---
+
+## 3. Struttura generale della pipeline
+
+La pipeline segue una sequenza di fasi organizzate e modulari.  
+Ogni fase genera un output intermedio, utilizzato come input per la successiva.
+
+```bash
+input → Normalizzazione → Segmentazione → Binarizzazione → Thinning → Orientamento → Estrazione minutiae → Output finale
+```
+
+---
+
+## 4. Descrizione delle fasi di elaborazione
+
+### 4.1 Normalizzazione e Preprocessing iniziale
+
+**Obiettivo:** ridurre le variazioni d’intensità e migliorare il contrasto tra ridge e valley.  
+La normalizzazione assicura che ogni immagine abbia un range dinamico coerente e indipendente dalle condizioni di acquisizione.
+
+**Implementazione:**
+
+- **Normalizzazione lineare:**
+
+  Ogni pixel \( I(x, y) \) viene rimappato in funzione della media e deviazione standard dell’immagine:
+
+  ```math
   I_{norm}(x,y) = \frac{I(x,y) - \mu_I}{\sigma_I} \cdot \sigma_0 + \mu_0
-  $$
-  con valori target ($$\mu_0 = 128, \sigma_0 = 100$$).
-
-- **CLAHE (Contrast Limited Adaptive Histogram Equalization):**  
-  Migliora localmente il contrasto mantenendo la continuità tonale.  
-  Parametri tipici: `clipLimit=2.0`, `tileGridSize=(8,8)`.
-
-- **Denoising bilaterale e gaussiano:**  
-  Combinazione di filtro bilaterale (`cv2.bilateralFilter`) e filtro gaussiano (`gaussian_filter` di SciPy) per preservare i bordi delle ridge.
-
-📤 _Output: immagine normalizzata e denoised._
-
----
-
-### 2️⃣ **Segmentazione**
-
-#### Obiettivo
-Separare la regione di impronta (foreground) dallo sfondo uniforme, riducendo il rumore periferico.
-
-#### Implementazione
-- Calcolo della **varianza locale** su blocchi 16×16.
-- Thresholding di Otsu applicato alla mappa di varianza.
-- Pulizia mediante **operazioni morfologiche** (`closing`, `opening`) e selezione del componente connesso più grande.
-- Creazione di una **mask binaria** (foreground = 1).
-
-📤 _Output: immagine segmentata + maschera binaria._
-
----
-
-### 3️⃣ **Binarizzazione Adaptiva**
-
-#### Obiettivo
-Convertire l’immagine in una mappa binaria precisa dove le ridge siano chiaramente separabili.
-
-#### Implementazione
-- **Metodo Sauvola (adattivo):**  
-  Calcolo del threshold locale $$(T(x,y) = m(x,y) [1 + k(\frac{s(x,y)}{R} - 1)])$$  
-  con \(k = 0.3, R = 128\).
-- **Metodo Otsu (globale):**  
-  Applicato in combinazione per migliorare la robustezza in regioni di contrasto basso.
-- Fusione dei due metodi con pesatura adattiva, regolata sulla varianza locale.
-
-📤 _Output: immagine binaria robusta (ridges=1, valleys=0)._
-
----
-
-### 4️⃣ **Skeletonization (Thinning)**
-
-#### Obiettivo
-Ridurre le ridge a una linea di spessore un pixel, mantenendo la topologia originale.
-
-#### Implementazione
-- Uso di `skimage.morphology.skeletonize` o metodo Zhang–Suen.  
-- Pulizia di residui isolati con `remove_small_objects` e `binary_opening`.
-- Verifica topologica per connettività e rimozione di pixel spurii.
-
-📤 _Output: skeleton binario dell’impronta._
-
----
-
-### 5️⃣ **Calcolo del Campo di Orientamento**
-
-#### Obiettivo
-Determinare la direzione dominante delle ridge in ogni regione locale.
-
-#### Implementazione
-- Derivate parziali con operatori **Sobel** \(G_x, G_y\).
-- Calcolo tensoriale locale:
-  $$
-  \theta(x,y) = \frac{1}{2}\arctan\left(\frac{2G_xG_y}{G_x^2 - G_y^2}\right)
-  $$
-- Smoothing mediante filtro gaussiano 2D per garantire coerenza direzionale.
-- Visualizzazione tramite mappa vettoriale o overlay colorato.
-
-📤 _Output: mappa di orientamento + immagine visuale._
-
----
-
-### 6️⃣ **Estrazione delle Minutiae**
-
-#### Obiettivo
-Identificare punti caratteristici dell’impronta:
-- **Ending points** (terminazioni)
-- **Bifurcations** (ramificazioni)
-
-#### Implementazione
-- Metodo **Crossing Number (CN)** su finestra 3×3:
-  $$
-  CN = \frac{1}{2}\sum_{i=1}^8 |P_i - P_{i+1}|
-  $$
-  - CN = 1 → _ending_
-  - CN = 3 → _bifurcation_
-- Rimozione duplicati tramite **KD-Tree** spaziale (distanza < 8 px).
-- Calcolo dell’**orientamento locale** di ogni minutia con PCA su patch 11×11.
-- Assegnazione attributi:
-  ```python
-  {
-      "x": x_coord,
-      "y": y_coord,
-      "type": "ending" or "bifurcation",
-      "theta": orientation_angle
-  }
   ```
+dove:
+- \( \mu_I \), \( \sigma_I \): media e deviazione standard dei valori di intensità dell’immagine originale;
+- \( \mu_0 \), \( \sigma_0 \): parametri target di normalizzazione scelti empiricamente (es. 100 e 100);
+- \( I_{norm}(x,y) \): valore normalizzato del pixel.
 
+L’obiettivo di questa fase è rendere le impronte confrontabili tra loro, riducendo l’impatto di illuminazione, sensore e condizioni di contatto.
+
+---
+
+### 4.2 Segmentazione e mascheramento
+
+**Scopo:** separare le regioni effettivamente biometriche (contenenti ridge) dal background o da aree prive di informazione.
+
+**Procedura:**
+1. Suddivisione dell’immagine in blocchi (es. 16×16 pixel);
+2. Calcolo della varianza locale dell’intensità per ogni blocco;
+3. Classificazione dei blocchi come “foreground” se la varianza supera una soglia empirica;
+4. Applicazione di un filtro morfologico (closing + opening) per affinare la maschera;
+5. Riduzione del rumore ai bordi tramite erosione controllata.
+
+La **maschera binaria risultante** viene utilizzata per vincolare le elaborazioni successive esclusivamente alle regioni biometriche.
+
+---
+
+### 4.3 Binarizzazione
+
+Una volta isolata la regione di interesse, l’immagine viene convertita in formato binario (ridge/valley).  
+Sono stati sperimentati diversi approcci:
+
+- **Binarizzazione globale (Otsu):**  
+  efficace su immagini omogenee ma sensibile a variazioni locali;
+
+- **Binarizzazione adattiva (Gaussian/Mean Adaptive Thresholding):**  
+  migliora la separazione delle ridge in presenza di non uniformità di contrasto;
+
+- **Metodi basati su Gabor filtering:**  
+  sfruttano la direzionalità delle creste per preservare la continuità strutturale.
+
+Il risultato è un’immagine binaria \( B(x,y) \in \{0,1\} \), dove le ridge sono rappresentate dai pixel bianchi.
+
+---
+
+### 4.4 Scheletrizzazione (Thinning)
+
+**Obiettivo:** ridurre le ridge a spessori un pixel mantenendone la topologia.  
+Viene impiegato l’algoritmo di **Zhang–Suen** o, in alternativa, la funzione `cv2.ximgproc.thinning()` di OpenCV, ottimizzata per immagini binarie.
+
+Questa fase è cruciale poiché la qualità dello scheletro influenza direttamente la precisione dell’estrazione delle *minutiae*.
+
+---
+
+### 4.5 Calcolo dell’orientamento e mappa di frequenza
+
+Per stimare la direzione delle creste e la loro periodicità si analizzano finestre locali (es. 16×16 pixel) calcolando:
+
+- Gradiente \( G_x, G_y \) tramite Sobel;
+- Angolo di orientamento medio:  
+  ```math
+  \theta = \frac{1}{2} \tan^{-1}\left(\frac{2 \sum G_x G_y}{\sum(G_x^2 - G_y^2)}\right)
+  ```
 
 
 
