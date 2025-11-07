@@ -1,146 +1,166 @@
 <h1 align="center">Multimodal Biometric Identification System</h1>
 
-<h2 align="left">🚀 Descrizione del Progetto</h2>
-
-<div align="justify">
-Benvenuti in <strong>Multimodal Biometric Identification System</strong>, un progetto accademico sviluppato per sostenere l'esame di <strong>Sistemi di Identificazione Biometrica</strong>.  
-L’obiettivo è realizzare una pipeline <strong>robusta, modulare e scalabile</strong> per l’identificazione biometrica multimodale, combinando dati di <strong>impronte digitali</strong> e <strong>palmo della mano</strong>.
-</div>
-
-<h3 align="left">🔬 Approccio</h3>
-
-<div align="justify">
-Il sistema integra diverse tecniche avanzate di estrazione delle feature per catturare sia le <strong>micro-strutture locali</strong> che i <strong>pattern globali</strong>:
-</div>
-
-- **HOG (Histogram of Oriented Gradients):** cattura orientamenti e contorni locali.  
-- **Gabor Filters:** evidenzia frequenze e orientamenti tipici delle creste epidermiche.  
-- **LBP (Local Binary Patterns):** descrive micro-texture locali, utile per pattern minutiae.  
-- **Campo di orientamento locale:** analizza la direzione predominante delle creste per classificare pattern globali: *Arch*, *Loop*, *Whorl*.  
-
-<div align="justify">
-Questa combinazione permette di ottenere una <strong>rappresentazione multimodale ricca e discriminante</strong>, pronta per il clustering interno e l’identificazione dei soggetti.
-</div>
-
-<h3 align="left">🛡 Applicazioni</h3>
-
-<div align="justify">
-Il progetto fornisce una base solida per applicazioni in:
-</div>
-
-- **Sistemi di sicurezza biometrica avanzati**  
-- **Autenticazione e controllo accessi**  
-- **Ricerca forense e studi scientifici su pattern biometrici**
-
-<hr>
-
-<h2 align="left">🗂 Dataset Utilizzato</h2>
-
-<div align="justify">
-Per testare l’affidabilità e la robustezza del sistema è stato scelto un dataset di riferimento:
-</div>
-
-- **Nome:** PolyU High-Resolution Fingerprint Database II (PolyU HRF DBII)  
-- **Tipo di dati:** immagini ad alta risoluzione di impronte digitali e palmo della mano  
-- **Formato:** `.jpg`  
-- **Caratteristiche principali:**  
-  - Campioni multipli per soggetto con variazioni di pressione e posizione  
-  - Permette di testare <strong>robustezza, accuratezza e generalizzazione</strong> delle feature estratte  
-
-> 💡 Il dataset consente di validare la pipeline in scenari realistici e complessi, simulando applicazioni di sicurezza reali.
-
-<hr>
-
-<h2 align="left">⚙️ Requisiti di Sistema</h2>
-
-<div align="justify">
-Il progetto è sviluppato in <strong>Python 3.10+</strong> e richiede le principali librerie scientifiche:
-</div>
-
-| Libreria          | Versione minima | Funzione principale                     |
-|------------------|----------------|----------------------------------------|
-| OpenCV            | ≥ 4.5          | Elaborazione immagini                  |
-| scikit-image      | ≥ 0.19         | Feature extraction (HOG, LBP, ecc.)  |
-| scikit-learn      | ≥ 1.3          | Clustering, PCA, t-SNE                |
-| NumPy             | ≥ 1.24         | Computazione numerica                  |
-| Matplotlib        | ≥ 3.7          | Visualizzazione opzionale             |
-
-> 💡 Consiglio: creare un ambiente virtuale dedicato (`conda` o `venv`) per mantenere tutte le dipendenze isolate e garantire la riproducibilità.
-
-
-
-## Struttura della repository:
-
-```bash
-├── 📁 config
-│   └── ⚙️ environment.yml
-│
-├── 📁 demo classifier
-│   ├── 🐍 classification.py
-│   ├── 🐍 clustering.py
-│   ├── 🐍 config.py
-│   ├── 🐍 demo_classifier.py
-│   ├── 🐍 feature_fun.py
-│   └── 🐍 visualization.py
-│
-├── ⚙️ .gitignore
-│
-├── 📝 README.md
-│
-├── 📄 prepare.bat
-└── 📄 prepare.sh
-```
+> _Pipeline completa per l’elaborazione e l’analisi di impronte digitali basata sul dataset **PolyU HRF DBII** (Hong Kong Polytechnic University High Resolution Fingerprint Database II)._  
 
 ---
 
-## 🏃‍♂️ Come Eseguire
+## 🔍 Introduzione
 
-### 1. Preparazione
-1. Clonare il repository:
-```bash
-git clone https://github.com/GiovanniIacuzzo/multimodal_biometric_fingerprints_palms.git
-cd multimodal_biometric_fingerprints_palms
-```
-Posizionare il dataset `PolyU HRF DBII` nella cartella `dataset/` o configurare `DATASET_DIR` nel file `config.py`.
+Questo progetto implementa una **pipeline biometrica** per l’elaborazione e l’estrazione di feature da impronte digitali ad alta risoluzione.  
+L’obiettivo è fornire un framework sperimentale **robusto, riproducibile e scientificamente trasparente** per l’analisi delle impronte, dalla fase di acquisizione fino all’estrazione delle minutiae.
 
-2. Esecuzione dello Script di Setup
+Ogni fase della pipeline è progettata per affrontare i problemi più comuni nelle immagini biometriche:
+- **rumore e contrasto non uniforme**,
+- **regioni di background e segmentazione imperfetta**,
+- **distorsioni locali e discontinuità delle ridge**.
 
-- Linux / macOS:
-```bash
-bash prepare.sh
-```
+---
 
-- Windows:
-```bash
-prepare.bat
-```
-Questo configurerà l'intero progetto installando le dipendenze, creando le cartelle per salvare log e immagini e creando l'ambiente conda necessario per eseguire il progetto, come verrà richiesto si dovrà attivare l'ambiente in questo modo:
+## 🧬 Dataset: PolyU High Resolution Fingerprint Database II (PolyU HFR DBII)
 
-```bash
-conda activate multimodal_biometric
-```
+La pipeline è sviluppata e testata sul dataset **PolyU HRF DBII**, una delle più note basi di dati per l’analisi di impronte digitali ad alta risoluzione.
 
-3. Esecuzione Manuale
-Se si preferisce lanciare manualmente:
-- Entrare nella cartella demo_classifier:
-```bash
-cd demo_classifier
-```
-- Eseguire il main script:
-```bash
-python demo_classifier.py
-```
+### 📁 Caratteristiche del dataset
 
-- I risultati saranno salvati in:
-```bash
-labels.csv
-```
-e eventuali grafici di distribuzione saranno generati automaticamente nella cartella results/ (configurabile).
+- **Origine:** Department of Computing, The Hong Kong Polytechnic University  
+- **Nome completo:** High Resolution Fingerprint Database II (DBII)  
+- **Numero soggetti:** 148 individui  
+- **Numero immagini totali:** 148 × 10 = **1480 impronte**  
+- **Risoluzione:** 1200 dpi (pixel spacing ≈ 21 µm)  
+- **Formato file:** TIFF a 8-bit grayscale  
+- **Dimensione tipica:** 240×320 o superiore  
+
+Ogni soggetto è rappresentato da **10 immagini acquisite in sessioni diverse**, con variazioni di pressione, rotazione, e parziale sovrapposizione.  
+Questo rende il dataset ideale per testare algoritmi di **enhancement e robustezza strutturale** delle ridge.
+
+---
+
+## ⚙️ Funzionamento Generale della Pipeline
+
+La pipeline segue una sequenza di fasi ordinate, ciascuna con scopi e trasformazioni specifiche.  
+Ogni stadio produce **un output intermedio**, utilizzato come input per il successivo.
+
+### 1️⃣ **Normalizzazione e Preprocessing Iniziale**
+
+#### Obiettivo
+Rimuovere variazioni d’intensità e migliorare il contrasto tra ridge e valley.  
+Assicurare che ogni immagine presenti un range dinamico coerente prima della segmentazione.
+
+#### Implementazione
+- **Normalizzazione lineare:**  
+  Ogni pixel `p` è rimappato come:  
+  $$
+  I_{norm}(x,y) = \frac{I(x,y) - \mu_I}{\sigma_I} \cdot \sigma_0 + \mu_0
+  $$
+  con valori target ($$\mu_0 = 128, \sigma_0 = 100$$).
+
+- **CLAHE (Contrast Limited Adaptive Histogram Equalization):**  
+  Migliora localmente il contrasto mantenendo la continuità tonale.  
+  Parametri tipici: `clipLimit=2.0`, `tileGridSize=(8,8)`.
+
+- **Denoising bilaterale e gaussiano:**  
+  Combinazione di filtro bilaterale (`cv2.bilateralFilter`) e filtro gaussiano (`gaussian_filter` di SciPy) per preservare i bordi delle ridge.
+
+📤 _Output: immagine normalizzata e denoised._
+
+---
+
+### 2️⃣ **Segmentazione**
+
+#### Obiettivo
+Separare la regione di impronta (foreground) dallo sfondo uniforme, riducendo il rumore periferico.
+
+#### Implementazione
+- Calcolo della **varianza locale** su blocchi 16×16.
+- Thresholding di Otsu applicato alla mappa di varianza.
+- Pulizia mediante **operazioni morfologiche** (`closing`, `opening`) e selezione del componente connesso più grande.
+- Creazione di una **mask binaria** (foreground = 1).
+
+📤 _Output: immagine segmentata + maschera binaria._
+
+---
+
+### 3️⃣ **Binarizzazione Adaptiva**
+
+#### Obiettivo
+Convertire l’immagine in una mappa binaria precisa dove le ridge siano chiaramente separabili.
+
+#### Implementazione
+- **Metodo Sauvola (adattivo):**  
+  Calcolo del threshold locale $$(T(x,y) = m(x,y) [1 + k(\frac{s(x,y)}{R} - 1)])$$  
+  con \(k = 0.3, R = 128\).
+- **Metodo Otsu (globale):**  
+  Applicato in combinazione per migliorare la robustezza in regioni di contrasto basso.
+- Fusione dei due metodi con pesatura adattiva, regolata sulla varianza locale.
+
+📤 _Output: immagine binaria robusta (ridges=1, valleys=0)._
+
+---
+
+### 4️⃣ **Skeletonization (Thinning)**
+
+#### Obiettivo
+Ridurre le ridge a una linea di spessore un pixel, mantenendo la topologia originale.
+
+#### Implementazione
+- Uso di `skimage.morphology.skeletonize` o metodo Zhang–Suen.  
+- Pulizia di residui isolati con `remove_small_objects` e `binary_opening`.
+- Verifica topologica per connettività e rimozione di pixel spurii.
+
+📤 _Output: skeleton binario dell’impronta._
+
+---
+
+### 5️⃣ **Calcolo del Campo di Orientamento**
+
+#### Obiettivo
+Determinare la direzione dominante delle ridge in ogni regione locale.
+
+#### Implementazione
+- Derivate parziali con operatori **Sobel** \(G_x, G_y\).
+- Calcolo tensoriale locale:
+  $$
+  \theta(x,y) = \frac{1}{2}\arctan\left(\frac{2G_xG_y}{G_x^2 - G_y^2}\right)
+  $$
+- Smoothing mediante filtro gaussiano 2D per garantire coerenza direzionale.
+- Visualizzazione tramite mappa vettoriale o overlay colorato.
+
+📤 _Output: mappa di orientamento + immagine visuale._
+
+---
+
+### 6️⃣ **Estrazione delle Minutiae**
+
+#### Obiettivo
+Identificare punti caratteristici dell’impronta:
+- **Ending points** (terminazioni)
+- **Bifurcations** (ramificazioni)
+
+#### Implementazione
+- Metodo **Crossing Number (CN)** su finestra 3×3:
+  $$
+  CN = \frac{1}{2}\sum_{i=1}^8 |P_i - P_{i+1}|
+  $$
+  - CN = 1 → _ending_
+  - CN = 3 → _bifurcation_
+- Rimozione duplicati tramite **KD-Tree** spaziale (distanza < 8 px).
+- Calcolo dell’**orientamento locale** di ogni minutia con PCA su patch 11×11.
+- Assegnazione attributi:
+  ```python
+  {
+      "x": x_coord,
+      "y": y_coord,
+      "type": "ending" or "bifurcation",
+      "theta": orientation_angle
+  }
+  ```
+
+
+
+
 
 >Note di Sviluppo:
 Il progetto è ancora in fase di sviluppo.
-Alcune funzioni, come consensus_kmeans e la standardizzazione globale, possono essere ottimizzate.
-La pipeline attuale genera cluster_in_class basati su pattern globali e feature multimodali, ma non è ancora pronta per produzione.
 
 --- 
 
