@@ -25,19 +25,33 @@ def load_image(path: str) -> np.ndarray:
         print(f"[ERRORE] Impossibile leggere {path}: {e}")
         return None
 
-
 def save_debug_images(results: dict, output_dir: str, base_name: str):
-    """Salva tutte le fasi intermedie del preprocessing."""
+    """Salva tutte le fasi intermedie del preprocessing in formato sicuro."""
     os.makedirs(output_dir, exist_ok=True)
+
+    def safe_convert(img: np.ndarray) -> np.ndarray:
+        """Converte automaticamente in uint8 evitando warning."""
+        if img.dtype == np.uint8:
+            return img
+        if img.dtype == bool:
+            return (img.astype(np.uint8)) * 255
+        if np.issubdtype(img.dtype, np.floating):
+            # Se float tra 0-1 → scala a 0-255
+            if img.max() <= 1.0:
+                img = img * 255.0
+            return np.clip(img, 0, 255).astype(np.uint8)
+        if np.issubdtype(img.dtype, np.integer):
+            return np.clip(img, 0, 255).astype(np.uint8)
+        return img.astype(np.uint8)
+
     for key, img in results.items():
         if img is None:
             continue
         filename = os.path.join(output_dir, f"{base_name}_{key}.png")
         try:
-            cv2.imwrite(filename, img)
-        except Exception:
-            print(f"[ATTENZIONE] Fallito salvataggio di {filename}")
-
+            cv2.imwrite(filename, safe_convert(img))
+        except Exception as e:
+            print(f"[ATTENZIONE] Fallito salvataggio di {filename}: {e}")
 
 def save_image_record(subject_id, filename, path_original, path_enhanced, orientation_mean=None, preprocessing_time=None):
     """Registra i metadati nel database."""
@@ -54,11 +68,9 @@ def save_image_record(subject_id, filename, path_original, path_enhanced, orient
     conn.close()
     return image_id
 
-
 # ================================================
 # MAIN PIPELINE
 # ================================================
-
 def run_preprocessing(
     input_dir: str = config.DATASET_DIR,
     output_dir: str = config.PROCESSED_DIR,

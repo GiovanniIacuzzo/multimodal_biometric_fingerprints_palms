@@ -2,11 +2,8 @@ import sys
 import os
 import traceback
 import faulthandler
-
 faulthandler.enable()
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-# Importa i moduli della pipeline
 from config import config
 from src.catalog.prepare_catalog import main as prepare_catalog
 from src.preprocessing.run_preprocessing import run_preprocessing
@@ -14,7 +11,6 @@ from src.features.extract_features import main as extract_minutiae
 
 
 def run_pipeline():
-    # Assicurati che le directory esistano
     for path in [
         config.DATA_DIR,
         config.PROCESSED_DIR,
@@ -31,7 +27,7 @@ def run_pipeline():
         print("====================================")
 
         print("\n[1/6] Preparazione catalogo...")
-        prepare_catalog()  # userà internamente config.METADATA_DIR
+        prepare_catalog()
 
         print("\n[2/6] Preprocessing immagini...")
         run_preprocessing(
@@ -42,12 +38,12 @@ def run_pipeline():
         )
 
         print("\n[3/6] Estrazione minutiae...")
-        extract_minutiae()  # anche qui potrà leggere da config.FEATURES_DIR
+        extract_minutiae()
 
-        print("\n✅ Pipeline completata con successo!")
+        print("\nPipeline completata con successo!")
 
     except Exception as e:
-        print(f"\n❌ Errore durante l'esecuzione della pipeline:\n{e}")
+        print(f"\nErrore durante l'esecuzione della pipeline:\n{e}")
         traceback.print_exc()
 
 
