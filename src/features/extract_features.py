@@ -2,7 +2,8 @@ import os
 import cv2
 import numpy as np
 from typing import List, Dict, Optional
-
+import json
+from scipy.spatial import cKDTree
 from src.features.utils import compute_orientation_map
 from config import config as cfg
 
@@ -10,9 +11,8 @@ from config import config as cfg
 # 1. Stima orientamento locale di una minutia
 # ============================================================
 def estimate_minutia_orientation(skel: np.ndarray, x: int, y: int, window: Optional[int] = None) -> float:
-    """Stima l'orientamento di una singola minutia su immagine scheletrizzata."""
     if window is None:
-        window = cfg.ORIENTATION_WINDOW if hasattr(cfg, "ORIENTATION_WINDOW") else 15
+        window = getattr(cfg, "ORIENTATION_WINDOW", 15)
 
     h, w = skel.shape
     r = window // 2
@@ -35,10 +35,7 @@ def estimate_minutia_orientation(skel: np.ndarray, x: int, y: int, window: Optio
 # ============================================================
 # 2. Non-Maximum Suppression spaziale
 # ============================================================
-from scipy.spatial import cKDTree
-
 def nms_min_distance(minutiae: List[Dict], min_dist: Optional[float] = None) -> List[Dict]:
-    """Applica NMS spaziale per rimuovere minutiae troppo vicine."""
     if min_dist is None:
         min_dist = getattr(cfg, "MIN_DISTANCE", 6.0)
 
@@ -65,7 +62,36 @@ def nms_min_distance(minutiae: List[Dict], min_dist: Optional[float] = None) -> 
 
 
 # ============================================================
-# 3. Post-processing completo delle minutiae
+# 3. Estrazione minutiae reali dallo scheletro
+# ============================================================
+def extract_minutiae_from_skeleton(skel: np.ndarray) -> List[Dict]:
+    """
+    Estrae terminazioni e biforcazioni da un'immagine scheletrizzata.
+    Restituisce una lista di dizionari {"x": int, "y": int, "type": str}.
+    """
+    minutiae = []
+    sk = (skel > 0).astype(np.uint8)
+    if sk.sum() == 0:
+        return minutiae
+
+    kernel = np.array([[1,1,1],
+                       [1,10,1],
+                       [1,1,1]], dtype=np.uint8)
+
+    neighbor_count = cv2.filter2D(sk, -1, kernel, borderType=cv2.BORDER_CONSTANT)
+    ys, xs = np.nonzero(sk)
+
+    for y, x in zip(ys, xs):
+        count = neighbor_count[y, x] - 10
+        if count == 1:
+            minutiae.append({"x": x, "y": y, "type": "ending"})
+        elif count == 3:
+            minutiae.append({"x": x, "y": y, "type": "bifurcation"})
+    return minutiae
+
+
+# ============================================================
+# 4. Post-processing completo delle minutiae
 # ============================================================
 def postprocess_minutiae(
     minutiae: List[Dict],
@@ -73,13 +99,8 @@ def postprocess_minutiae(
     gray: Optional[np.ndarray] = None,
     params: Optional[Dict] = None
 ) -> List[Dict]:
-    """
-    Post-processing completo delle minutiae:
-      - Filtraggio per margine, coerenza e densità
-      - Stima dell’orientamento locale
-      - Non-Maximum Suppression
-    """
-    if not minutiae or skel is None:
+
+    if not minutiae or skel is None or skel.sum() == 0:
         return []
 
     params = params or {}
@@ -93,11 +114,9 @@ def postprocess_minutiae(
     sk_bin = (skel > 0).astype(np.uint8)
     h, w = sk_bin.shape
 
-    # Mappa di densità normalizzata
     density = cv2.blur(sk_bin.astype(np.float32), (qwin, qwin))
     density /= (density.max() + 1e-6)
 
-    # Mappa di orientazione e coerenza
     orient, coherence = compute_orientation_map(gray if gray is not None else sk_bin)
     coherence = np.clip(coherence, 0, 1)
 
@@ -126,84 +145,88 @@ def postprocess_minutiae(
         })
         enriched.append(m)
 
-    refined = nms_min_distance(enriched, min_dist)
-    return refined
+    return nms_min_distance(enriched, min_dist)
 
 
 # ============================================================
-# 4. MAIN: Esecuzione di test / validazione
+# 5. Elaborazione singolo sample
 # ============================================================
-def process_sample(debug_dir: str):
-    """
-    Esegue il post-processing per un singolo sample contenuto in debug_dir.
-    """
+def process_sample(debug_dir: str, output_dir: str):
     sample_name = os.path.basename(debug_dir)
-    print(f"\n--- Elaborazione di {sample_name} ---")
+    print(f"\nElaborazione di: {sample_name}")
 
-    # Percorsi immagini
     skel_path = os.path.join(debug_dir, f"{sample_name}_skeleton.png")
     gray_path = os.path.join(debug_dir, f"{sample_name}_segmented.png")
-    output_path = os.path.join(debug_dir, f"{sample_name}_minutiae_postprocessed.png")
 
-    # Verifica file richiesti
     if not os.path.exists(skel_path):
-        print(f"❌ Nessuna immagine skeleton trovata per {sample_name}, salto.")
+        print(f"Skeleton non trovato: {skel_path}")
         return
 
     if not os.path.exists(gray_path):
-        print(f"⚠️  Immagine segmentata non trovata per {sample_name}, uso skeleton come fallback.")
+        print(f"Segmentata non trovata, uso skeleton come fallback.")
         gray_path = skel_path
 
-    # Caricamento immagini
     skel = cv2.imread(skel_path, cv2.IMREAD_GRAYSCALE)
     gray = cv2.imread(gray_path, cv2.IMREAD_GRAYSCALE)
 
-    # --- Simulazione minutiae (provvisoria, in attesa di estrazione reale) ---
-    test_minutiae = [
-        {"x": np.random.randint(40, skel.shape[1] - 40),
-         "y": np.random.randint(40, skel.shape[0] - 40)}
-        for _ in range(100)
-    ]
+    # Estrazione minutiae reali
+    test_minutiae = extract_minutiae_from_skeleton(skel)
+    print(f"Minutiae trovate sullo scheletro: {len(test_minutiae)}")
 
-    print(f"Minutiae iniziali: {len(test_minutiae)}")
-
-    # --- Post-processing ---
     refined = postprocess_minutiae(test_minutiae, skel, gray)
-    print(f"Minutiae finali:   {len(refined)}")
+    print(f"Minutiae finali dopo post-processing: {len(refined)}")
 
-    # --- Visualizzazione del risultato ---
-    vis = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+    os.makedirs(output_dir, exist_ok=True)
+
+    img_out_path = os.path.join(output_dir, f"{sample_name}_minutiae_postprocessed.png")
+    json_out_path = os.path.join(output_dir, f"{sample_name}_minutiae.json")
+
+    vis = cv2.cvtColor(skel, cv2.COLOR_GRAY2BGR)
     for m in refined:
         x, y = int(m["x"]), int(m["y"])
         cv2.circle(vis, (x, y), 3, (0, 0, 255), -1)
+    cv2.imwrite(img_out_path, vis)
 
-    # --- Salvataggio ---
-    cv2.imwrite(output_path, vis)
-    print(f"✅ Risultato salvato in: {output_path}")
+    for m in refined:
+        m["x"], m["y"] = int(m["x"]), int(m["y"])
+    with open(json_out_path, "w") as f:
+        json.dump(refined, f, indent=2)
+
+    print(f"Risultato salvato: {img_out_path}")
+    print(f"Dati minutiae salvati: {json_out_path}")
 
 
+# ============================================================
+# 6. Elaborazione batch
+# ============================================================
 def main():
-    """
-    Scorre automaticamente tutte le directory in data/processed/debug/
-    ed esegue il post-processing per ciascuna.
-    """
-    base_dir = os.path.join("data", "processed", "debug")
+    input_base = os.path.join("data", "processed", "debug")
+    output_base = os.path.join("data", "features", "minutiae")
 
-    if not os.path.exists(base_dir):
-        raise FileNotFoundError(f"Cartella non trovata: {base_dir}")
+    if not os.path.exists(input_base):
+        raise FileNotFoundError(f"Cartella non trovata: {input_base}")
 
-    subdirs = [os.path.join(base_dir, d) for d in os.listdir(base_dir)
-               if os.path.isdir(os.path.join(base_dir, d))]
+    os.makedirs(output_base, exist_ok=True)
 
-    if not subdirs:
-        print("Nessuna sottocartella trovata in data/processed/debug/")
+    sample_dirs = [
+        os.path.join(input_base, d)
+        for d in os.listdir(input_base)
+        if os.path.isdir(os.path.join(input_base, d))
+    ]
+
+    if not sample_dirs:
+        print("Nessuna sottocartella trovata.")
         return
 
-    for debug_dir in subdirs:
+    print(f"Trovate {len(sample_dirs)} impronte da elaborare.")
+
+    for debug_dir in sample_dirs:
+        sample_name = os.path.basename(debug_dir)
+        output_dir = os.path.join(output_base, sample_name)
         try:
-            process_sample(debug_dir)
+            process_sample(debug_dir, output_dir)
         except Exception as e:
-            print(f"⚠️ Errore durante l'elaborazione di {debug_dir}: {e}")
+            print(f"Errore su {sample_name}: {e}")
 
 
 if __name__ == "__main__":
