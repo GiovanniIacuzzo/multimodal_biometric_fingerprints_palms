@@ -321,13 +321,35 @@ python -m scripts.run_pipeline
 - I risultati verranno salvati nella cartella data.
 
 > [!IMPORTANT] **Note aggiuntive**
-> - Segui i passaggi nell’ordine indicato per evitare errori di configurazione.  
-> - Verifica che il database PostgreSQL e l’ambiente Conda siano attivi prima di eseguire la pipeline.  
-> - Assicurati di eseguire gli script `prepare.sh` (macOS/Linux) e `prepare.bat` (Windows) con i permessi corretti.
+>
+> Per eseguire correttamente la pipeline, assicurati di seguire i passaggi nell’ordine indicato:
+>
+> 1. Verifica che il database PostgreSQL e l’ambiente Conda siano attivi.
+> 2. Esegui gli script di preparazione con i permessi corretti:
+>
+> ```bash
+> ./prepare.sh      # macOS/Linux
+> prepare.bat       # Windows
+> ```
+>
+> 3. Attiva l’ambiente Conda corretto:
+>
+> ```bash
+> conda activate multimodal_biometric
+> ```
+>
+> 4. Esegui lo script principale della pipeline dalla cartella di progetto:
+>
+> ```bash
+> python -m scripts.run_pipeline
+> ```
+>
+> I risultati saranno salvati nella cartella `data`.
+
 
 ---
 
-> [!CAUTION] Note:
+> Note:
 Il progetto è ancora in fase di sviluppo.
 
 --- 
