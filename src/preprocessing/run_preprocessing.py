@@ -1,9 +1,11 @@
 import os
 import cv2
 import argparse
+import time
 import traceback
 import numpy as np
 from tqdm import tqdm
+from src.db.database import get_connection
 from src.preprocessing.enhancement import preprocess_fingerprint
 
 # ================================================
@@ -34,7 +36,19 @@ def save_debug_images(results: dict, output_dir: str, base_name: str):
         except Exception:
             print(f"[ATTENZIONE] Fallito salvataggio di {filename}")
 
-
+def save_image_record(subject_id, filename, path_original, path_enhanced, orientation_mean=None, preprocessing_time=None):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO images (subject_id, filename, path_original, path_enhanced, orientation_mean, preprocessing_time_sec, status)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+    """, (subject_id, filename, path_original, path_enhanced, orientation_mean, preprocessing_time, "done"))
+    image_id = cur.fetchone()["id"]
+    conn.commit()
+    cur.close()
+    conn.close()
+    return image_id
 
 # ================================================
 # MAIN PIPELINE
@@ -81,8 +95,10 @@ def run_preprocessing(
 
         try:
             # Esegue preprocessing completo (enhancement, binarizzazione, thinning)
+            start = time.time()
             results = preprocess_fingerprint(img, debug_dir=None)
             enhanced = results.get("enhanced", img)
+            duration = time.time() - start
 
             # Salva immagine principale migliorata
             base_name = os.path.splitext(file_name)[0]
@@ -94,6 +110,14 @@ def run_preprocessing(
                 debug_dir = os.path.join(output_dir, "debug", base_name)
                 save_debug_images(results, debug_dir, base_name)
 
+            image_id = save_image_record(
+                subject_id=None,  # puoi derivarlo dal nome file se serve
+                filename=file_name,
+                path_original=img_path,
+                path_enhanced=out_path,
+                orientation_mean=float(np.mean(results["orientation_map"])) if "orientation_map" in results else None,
+                preprocessing_time=duration
+            )
         except Exception as e:
             print(f"[ERRORE] Preprocessing fallito per {file_name}: {e}")
             traceback.print_exc()

@@ -51,3 +51,4 @@ dependencies:
       - fastapi>=0.110.0,<1.0
       - uvicorn>=0.29.0,<1.0
       - pillow-avif-plugin==1.4.1
+      - psycopg2-binary

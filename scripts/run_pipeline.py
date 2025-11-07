@@ -10,7 +10,11 @@ from config.config import ensure_dirs
 from src.catalog.prepare_catalog import main as prepare_catalog
 from src.preprocessing.run_preprocessing import run_preprocessing
 from src.features.extract_features import main as extract_minutiae
-from config.config import DATASET, PROCESSED_DIR
+
+DATASET = os.path.abspath("dataset/DBII")
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
+PROCESSED_DIR = os.path.join(BASE_DIR, "data", "processed")
+
 
 def run_pipeline():
     ensure_dirs()
