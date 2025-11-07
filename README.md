@@ -320,7 +320,8 @@ python -m scripts.run_pipeline
 ```
 - I risultati verranno salvati nella cartella data.
 
-> [!IMPORTANT] **Note aggiuntive**
+> [!IMPORTANT] 
+> **Note aggiuntive**
 >
 > Per eseguire correttamente la pipeline, assicurati di seguire i passaggi nell’ordine indicato:
 >
