@@ -75,7 +75,7 @@ La normalizzazione assicura che ogni immagine abbia un range dinamico coerente e
   I_{norm}(x,y) = \frac{I(x,y) - \mu_I}{\sigma_I} \cdot \sigma_0 + \mu_0
   ```
 dove:
-- \( \mu_I \), \( \sigma_I \): media e deviazione standard dei valori di intensità dell’immagine originale;
+- \mu_I, \sigma_I: media e deviazione standard dei valori di intensità dell’immagine originale;
 - \( \mu_0 \), \( \sigma_0 \): parametri target di normalizzazione scelti empiricamente (es. 100 e 100);
 - \( I_{norm}(x,y) \): valore normalizzato del pixel.
 
@@ -281,7 +281,53 @@ In sintesi, il modulo di logging e gestione output trasforma la pipeline in un f
 
 ---
 
->Note di Sviluppo:
+## Come eseguire la pipeline
+
+Per eseguire correttamente la pipeline, segui i passaggi descritti di seguito:
+
+### 1. Preparazione del dataset
+- Scarica il dataset **PolyU HRF DBII**.  
+- Posiziona i file nella cartella `dataset` all’interno del progetto.
+
+### 2. Creazione e configurazione dell’ambiente
+- Installa tutte le dipendenze necessarie.  
+- Crea l’ambiente Conda eseguendo:
+  - `prepare.sh` su macOS/Linux  
+  - `prepare.bat` su Windows  
+- Assicurati che tutte le librerie vengano installate correttamente.
+
+### 3. Configurazione del database PostgreSQL
+- Installa e configura PostgreSQL.  
+- Crea il database utilizzando lo script `schema.sql`, che definisce tutte le tabelle necessarie.  
+- Verifica che il database sia accessibile e funzionante.
+
+### 4. Configurazione dell’ambiente di esecuzione
+- Posiziona il file `.env` nella cartella `config`.  
+- Assicurati che il file contenga tutte le variabili necessarie per:
+  - Eseguire la pipeline  
+  - Connettersi al database
+
+### 5. Esecuzione della pipeline
+- Attiva l’ambiente Conda corretto:
+
+```bash
+conda activate multimodal_biometric
+```
+- Dalla cartella principale del progetto, esegui lo script principale:
+
+```bash
+python -m scripts.run_pipeline
+```
+- I risultati verranno salvati nella cartella data.
+
+> [!IMPORTANT] **Note aggiuntive**
+> - Segui i passaggi nell’ordine indicato per evitare errori di configurazione.  
+> - Verifica che il database PostgreSQL e l’ambiente Conda siano attivi prima di eseguire la pipeline.  
+> - Assicurati di eseguire gli script `prepare.sh` (macOS/Linux) e `prepare.bat` (Windows) con i permessi corretti.
+
+---
+
+> [!CAUTION] Note:
 Il progetto è ancora in fase di sviluppo.
 
 --- 
