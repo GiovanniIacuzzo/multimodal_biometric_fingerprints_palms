@@ -2,6 +2,7 @@ import sys
 import os
 import traceback
 import time
+import json
 import faulthandler
 faulthandler.enable()
 
@@ -12,7 +13,9 @@ from src.catalog.prepare_catalog import main as prepare_catalog
 from src.preprocessing.run_preprocessing import run_preprocessing
 from src.features.extract_features import main as extract_minutiae
 from src.matching.match_features import batch_match
-from src.db.database import get_connection, clear_database, get_all_image_ids
+from src.db.database import clear_database, get_all_image_ids
+from src.evaluation.evaluate_performance import evaluate_results
+
 
 # ======================================
 # Pipeline principale
@@ -57,6 +60,16 @@ def run_pipeline():
         print("\nRisultati matching:")
         for pair, score in match_results.items():
             print(f"{pair[0]} vs {pair[1]} -> Similarità: {score:.2f}")
+        
+        results_path = os.path.join(config.METADATA_DIR, "match_results.json")
+
+        json_results = {f"{k[0]}_vs_{k[1]}": v for k, v in match_results.items()}
+
+        with open(results_path, "w") as f:
+            json.dump(json_results, f, indent=4)
+
+        # Valutazione finale
+        metrics = evaluate_results(results_path, output_path=os.path.join(config.METADATA_DIR, "performance_metrics.json"), plot_dir=config.METADATA_DIR)
 
         print("\nPipeline completata con successo!")
 

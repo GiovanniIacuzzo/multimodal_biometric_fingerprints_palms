@@ -66,7 +66,6 @@ def get_all_image_ids() -> list[int]:
 
     # Ogni riga è un dizionario: {'id': 1}
     image_ids = [r['id'] for r in rows]
-    print(image_ids)
     return image_ids
 
 def save_image_record(subject_id, filename, path_original, path_enhanced, path_skeleton, orientation_mean=None, preprocessing_time=None):
