@@ -8,6 +8,7 @@ from config import config
 from src.catalog.prepare_catalog import main as prepare_catalog
 from src.preprocessing.run_preprocessing import run_preprocessing
 from src.features.extract_features import main as extract_minutiae
+from src.matching.match_features import batch_match
 
 
 def run_pipeline():
@@ -26,10 +27,10 @@ def run_pipeline():
         print("  MULTIMODAL BIOMETRIC PIPELINE")
         print("====================================")
 
-        print("\n[1/6] Preparazione catalogo...")
+        print("\n[1/4] Preparazione catalogo...")
         prepare_catalog()
 
-        print("\n[2/6] Preprocessing immagini...")
+        print("\n[2/4] Preprocessing immagini...")
         run_preprocessing(
             input_dir=config.DATASET_DIR,
             output_dir=config.PROCESSED_DIR,
@@ -37,8 +38,14 @@ def run_pipeline():
             small_subset=True
         )
 
-        print("\n[3/6] Estrazione minutiae...")
+        print("\n[3/4] Estrazione minutiae...")
         extract_minutiae()
+
+        print("\n[4/4] Matching impronte...")
+        match_results = batch_match(os.path.join(config.FEATURES_DIR, "minutiae"))
+
+        for pair, score in match_results.items():
+            print(f"{pair[0]} vs {pair[1]} -> Similarità: {score:.2f}")
 
         print("\nPipeline completata con successo!")
 
