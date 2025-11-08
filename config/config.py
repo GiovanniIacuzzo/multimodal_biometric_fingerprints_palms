@@ -79,35 +79,35 @@ def _getenv_int(name: str, default: int) -> int:
 # 4. Parametri pipeline minutiae
 # =====================================================
 # Qualità e post-processing
-QUALITY_WINDOW      = _getenv_int("QUALITY_WINDOW", 25)
-QUALITY_THRESHOLD   = _getenv_float("QUALITY_THRESHOLD", 0.1)
-COHERENCE_THRESHOLD = _getenv_float("COHERENCE_THRESHOLD", 0.15)
-MIN_DISTANCE        = _getenv_float("MIN_DISTANCE", 6.0)
-ORIENTATION_WINDOW  = _getenv_int("ORIENTATION_WINDOW", 15)
-MARGIN              = _getenv_int("MARGIN", 35)
-ORIENT_SIGMA        = _getenv_float("ORIENT_SIGMA", 7.0)
+QUALITY_WINDOW        = _getenv_int("QUALITY_WINDOW", 25)
+QUALITY_THRESHOLD     = _getenv_float("QUALITY_THRESHOLD", 0.25)
+COHERENCE_THRESHOLD   = _getenv_float("COHERENCE_THRESHOLD", 0.3)
+MIN_DISTANCE          = _getenv_float("MIN_DISTANCE", 10.0)
+ORIENTATION_WINDOW    = _getenv_int("ORIENTATION_WINDOW", 15)
+MARGIN                = _getenv_int("MARGIN", 40)
+ORIENT_SIGMA          = _getenv_float("ORIENT_SIGMA", 10.0)
 
 # Preprocessing immagini
-CLAHE_CLIP_LIMIT    = _getenv_float("CLAHE_CLIP_LIMIT", 2.0)
-CLAHE_TILE_SIZE     = _getenv_int("CLAHE_TILE_SIZE", 8)
-BILATERAL_D         = _getenv_int("BILATERAL_D", 5)
+CLAHE_CLIP_LIMIT      = _getenv_float("CLAHE_CLIP_LIMIT", 2.0)
+CLAHE_TILE_SIZE       = _getenv_int("CLAHE_TILE_SIZE", 8)
+BILATERAL_D           = _getenv_int("BILATERAL_D", 5)
 BILATERAL_SIGMA_COLOR = _getenv_float("BILATERAL_SIGMA_COLOR", 50.0)
 BILATERAL_SIGMA_SPACE = _getenv_float("BILATERAL_SIGMA_SPACE", 7.0)
-GAUSSIAN_SIGMA       = _getenv_float("GAUSSIAN_SIGMA", 0.7)
+GAUSSIAN_SIGMA        = _getenv_float("GAUSSIAN_SIGMA", 0.7)
 
 # Segmentazione e binarizzazione
-SAUVOLA_WIN          = _getenv_int("SAUVOLA_WIN", 25)
-SAUVOLA_K            = _getenv_float("SAUVOLA_K", 0.2)
+SAUVOLA_WIN           = _getenv_int("SAUVOLA_WIN", 25)
+SAUVOLA_K             = _getenv_float("SAUVOLA_K", 0.2)
 LOCAL_PATCH           = _getenv_int("LOCAL_PATCH", 64)
 MIN_OBJ_SIZE          = _getenv_int("MIN_OBJ_SIZE", 30)
 MAX_HOLE_SIZE         = _getenv_int("MAX_HOLE_SIZE", 100)
 MIN_SEGMENT_AREA      = _getenv_int("MIN_SEGMENT_AREA", 5000)
 
 # Blocchi e soglie generali
-BLOCK_SIZE           = _getenv_int("BLOCK_SIZE", 16)
-ENERGY_THRESHOLD     = _getenv_float("ENERGY_THRESHOLD", 1e-2)
-REL_THRESHOLD        = _getenv_float("REL_THRESHOLD", 0.2)
-VIS_SCALE            = _getenv_int("VIS_SCALE", 8)
+BLOCK_SIZE            = _getenv_int("BLOCK_SIZE", 16)
+ENERGY_THRESHOLD      = _getenv_float("ENERGY_THRESHOLD", 1e-2)
+REL_THRESHOLD         = _getenv_float("REL_THRESHOLD", 0.2)
+VIS_SCALE             = _getenv_int("VIS_SCALE", 8)
 
 # =====================================================
 # 5. Utility: stampa configurazione

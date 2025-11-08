@@ -1,232 +1,220 @@
 import os
-import cv2
-import numpy as np
-from typing import List, Dict, Optional
 import json
-from scipy.spatial import cKDTree
-from src.features.utils import compute_orientation_map
-from config import config as cfg
+import logging
+from typing import List, Dict, Optional
 
-# ============================================================
-# 1. Stima orientamento locale di una minutia
-# ============================================================
-def estimate_minutia_orientation(skel: np.ndarray, x: int, y: int, window: Optional[int] = None) -> float:
-    if window is None:
-        window = getattr(cfg, "ORIENTATION_WINDOW", 15)
+import numpy as np
+import cv2
+from src.features.post_processing import postprocess_minutiae
 
-    h, w = skel.shape
-    r = window // 2
-    x1, x2 = max(0, x - r), min(w, x + r + 1)
-    y1, y2 = max(0, y - r), min(h, y + r + 1)
-    patch = skel[y1:y2, x1:x2]
-
-    ys, xs = np.nonzero(patch)
-    if len(xs) < 10:
-        return np.nan
-
-    coords = np.column_stack([xs - xs.mean(), ys - ys.mean()])
-    cov = coords.T @ coords
-    eigvals, eigvecs = np.linalg.eigh(cov)
-    main_dir = eigvecs[:, np.argmax(eigvals)]
-    angle = np.arctan2(main_dir[1], main_dir[0])
-    return float(np.mod(angle + np.pi, np.pi) - np.pi / 2)
+# ------------------------------------------------------------
+# Configurazione logging
+# ------------------------------------------------------------
+logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
 
-# ============================================================
-# 2. Non-Maximum Suppression spaziale
-# ============================================================
-def nms_min_distance(minutiae: List[Dict], min_dist: Optional[float] = None) -> List[Dict]:
-    if min_dist is None:
-        min_dist = getattr(cfg, "MIN_DISTANCE", 6.0)
+# ------------------------------------------------------------
+# Thinning (scheletrizzazione)
+# ------------------------------------------------------------
+def thin_skeleton(img: np.ndarray) -> np.ndarray:
+    """
+    Applica un'operazione di thinning sull'immagine fornita.
 
-    if not minutiae:
-        return []
+    Parameters
+    ----------
+    img : np.ndarray
+        Immagine binaria o in scala di grigi (0–255).
 
-    coords = np.array([[m["x"], m["y"]] for m in minutiae])
-    qualities = np.array([m.get("quality", 1.0) for m in minutiae])
-    order = np.argsort(-qualities)
+    Returns
+    -------
+    np.ndarray
+        Immagine binaria (0/1) corrispondente allo scheletro dell'impronta.
+    """
+    if img is None:
+        return np.zeros_like(img, dtype=np.uint8)
 
-    keep_mask = np.zeros(len(minutiae), dtype=bool)
-    tree = cKDTree(coords)
+    # Normalizza a 0/255
+    img_u8 = (img > 0).astype(np.uint8) * 255 if img.dtype != np.uint8 else img.copy()
 
-    for i in order:
-        if keep_mask[i]:
-            continue
-        keep_mask[i] = True
-        neighbors = tree.query_ball_point(coords[i], r=min_dist)
-        for j in neighbors:
-            if j != i:
-                keep_mask[j] = False
+    try:
+        # Usa thinning nativo OpenCV se disponibile
+        thin = cv2.ximgproc.thinning(img_u8)
+        return (thin > 0).astype(np.uint8)
+    except Exception:
+        # Fallback: approssimazione morfologica
+        binar = (img_u8 > 127).astype(np.uint8)
+        prev = np.zeros_like(binar)
+        sk = binar.copy()
+        for _ in range(100):
+            eroded = cv2.erode(sk, np.ones((3, 3), np.uint8))
+            opened = cv2.dilate(eroded, np.ones((3, 3), np.uint8))
+            temp = sk - opened
+            sk = eroded.copy()
+            if np.array_equal(sk, prev):
+                break
+            prev = sk.copy()
+        return (sk > 0).astype(np.uint8)
 
-    return [m for i, m in enumerate(minutiae) if keep_mask[i]]
 
-
-# ============================================================
-# 3. Estrazione minutiae reali dallo scheletro
-# ============================================================
+# ------------------------------------------------------------
+# Estrazione delle minutiae
+# ------------------------------------------------------------
 def extract_minutiae_from_skeleton(skel: np.ndarray) -> List[Dict]:
     """
-    Estrae terminazioni e biforcazioni da un'immagine scheletrizzata.
-    Restituisce una lista di dizionari {"x": int, "y": int, "type": str}.
+    Estrae minutiae (terminazioni e biforcazioni) da un'immagine scheletrizzata.
+
+    Parameters
+    ----------
+    skel : np.ndarray
+        Immagine scheletrizzata in scala di grigi o binaria.
+
+    Returns
+    -------
+    List[Dict]
+        Lista di minutiae con chiavi: ``x``, ``y``, ``type``.
     """
-    minutiae = []
-    sk = (skel > 0).astype(np.uint8)
-    if sk.sum() == 0:
-        return minutiae
+    if skel is None:
+        return []
 
-    kernel = np.array([[1,1,1],
-                       [1,10,1],
-                       [1,1,1]], dtype=np.uint8)
+    # Converti in grayscale se necessario
+    sk_gray = cv2.cvtColor(skel, cv2.COLOR_BGR2GRAY) if skel.ndim == 3 else skel.copy()
 
-    neighbor_count = cv2.filter2D(sk, -1, kernel, borderType=cv2.BORDER_CONSTANT)
-    ys, xs = np.nonzero(sk)
+    # Selezione automatica polarità (ridges bianche o nere)
+    bin_pos = (sk_gray > 127).astype(np.uint8)
+    bin_neg = (sk_gray <= 127).astype(np.uint8)
+    count_pos, count_neg = bin_pos.sum(), bin_neg.sum()
 
+    if count_pos == 0 and count_neg == 0:
+        return []
+
+    sk = bin_pos if count_pos <= count_neg else bin_neg
+    chosen = ">127" if count_pos <= count_neg else "<=127"
+    logging.info(f"Binarizzazione scelta: {chosen} (pixel ON = {min(count_pos, count_neg)})")
+
+    # Scheletrizzazione
+    sk_thin = thin_skeleton((sk * 255).astype(np.uint8))
+    if sk_thin.sum() == 0:
+        logging.warning("Thinning ha prodotto immagine vuota, uso binarizzazione originale.")
+        sk_thin = sk
+
+    h, w = sk_thin.shape
+    minutiae: List[Dict] = []
+
+    # Scansione 8-neighborhood per Crossing Number
+    ys, xs = np.nonzero(sk_thin)
     for y, x in zip(ys, xs):
-        count = neighbor_count[y, x] - 10
-        if count == 1:
-            minutiae.append({"x": x, "y": y, "type": "ending"})
-        elif count == 3:
-            minutiae.append({"x": x, "y": y, "type": "bifurcation"})
+        if y <= 0 or y >= h - 1 or x <= 0 or x >= w - 1:
+            continue
+
+        P = [
+            sk_thin[y, x + 1], sk_thin[y - 1, x + 1],
+            sk_thin[y - 1, x], sk_thin[y - 1, x - 1],
+            sk_thin[y, x - 1], sk_thin[y + 1, x - 1],
+            sk_thin[y + 1, x], sk_thin[y + 1, x + 1],
+        ]
+        P_int = [int(v) for v in P]
+        CN = sum(abs(P_int[i] - P_int[(i + 1) % 8]) for i in range(8)) // 2
+
+        if CN == 1:
+            minutiae.append({"x": int(x), "y": int(y), "type": "ending"})
+        elif CN == 3:
+            minutiae.append({"x": int(x), "y": int(y), "type": "bifurcation"})
+
+    logging.info(f"Minutiae grezze estratte: {len(minutiae)}")
     return minutiae
 
 
-# ============================================================
-# 4. Post-processing completo delle minutiae
-# ============================================================
-def postprocess_minutiae(
-    minutiae: List[Dict],
-    skel: np.ndarray,
-    gray: Optional[np.ndarray] = None,
-    params: Optional[Dict] = None
-) -> List[Dict]:
+# ------------------------------------------------------------
+# Elaborazione singolo campione
+# ------------------------------------------------------------
+def process_sample(debug_dir: str, output_dir: str, params: Optional[Dict] = None) -> None:
+    """
+    Esegue l'intero processo di estrazione e post-processing su un singolo campione.
 
-    if not minutiae or skel is None or skel.sum() == 0:
-        return []
-
-    params = params or {}
-    qwin = params.get("quality_window", getattr(cfg, "QUALITY_WINDOW", 25))
-    qth = params.get("quality_threshold", getattr(cfg, "QUALITY_THRESHOLD", 0.1))
-    coh_th = params.get("coherence_threshold", getattr(cfg, "COHERENCE_THRESHOLD", 0.15))
-    min_dist = params.get("min_distance", getattr(cfg, "MIN_DISTANCE", 6.0))
-    ori_win = params.get("orientation_window", getattr(cfg, "ORIENTATION_WINDOW", 15))
-    margin = params.get("margin", getattr(cfg, "MARGIN", 35))
-
-    sk_bin = (skel > 0).astype(np.uint8)
-    h, w = sk_bin.shape
-
-    density = cv2.blur(sk_bin.astype(np.float32), (qwin, qwin))
-    density /= (density.max() + 1e-6)
-
-    orient, coherence = compute_orientation_map(gray if gray is not None else sk_bin)
-    coherence = np.clip(coherence, 0, 1)
-
-    enriched = []
-    for m in minutiae:
-        x, y = int(m["x"]), int(m["y"])
-
-        if x < margin or x > (w - margin) or y < margin or y > (h - margin):
-            continue
-
-        local_coh = float(coherence[y, x])
-        local_density = float(density[y, x])
-
-        if local_density < qth or local_coh < coh_th:
-            continue
-
-        ang = estimate_minutia_orientation(sk_bin, x, y, ori_win)
-        if np.isnan(ang):
-            continue
-
-        q = 0.6 * local_coh + 0.4 * local_density
-        m.update({
-            "orientation": ang,
-            "quality": q,
-            "coherence": local_coh
-        })
-        enriched.append(m)
-
-    return nms_min_distance(enriched, min_dist)
-
-
-# ============================================================
-# 5. Elaborazione singolo sample
-# ============================================================
-def process_sample(debug_dir: str, output_dir: str):
-    sample_name = os.path.basename(debug_dir)
-    print(f"\nElaborazione di: {sample_name}")
+    Parameters
+    ----------
+    debug_dir : str
+        Directory contenente le immagini intermedie di debug.
+    output_dir : str
+        Directory dove salvare i risultati.
+    params : dict, optional
+        Parametri per la fase di post-processing.
+    """
+    sample_name = os.path.basename(debug_dir.rstrip("/\\"))
+    logging.info(f"Elaborazione campione: {sample_name}")
 
     skel_path = os.path.join(debug_dir, f"{sample_name}_skeleton.png")
     gray_path = os.path.join(debug_dir, f"{sample_name}_segmented.png")
 
     if not os.path.exists(skel_path):
-        print(f"Skeleton non trovato: {skel_path}")
+        logging.error(f"File skeleton non trovato: {skel_path}")
         return
 
     if not os.path.exists(gray_path):
-        print(f"Segmentata non trovata, uso skeleton come fallback.")
+        logging.warning("File segmentato non trovato, uso skeleton come fallback.")
         gray_path = skel_path
 
     skel = cv2.imread(skel_path, cv2.IMREAD_GRAYSCALE)
     gray = cv2.imread(gray_path, cv2.IMREAD_GRAYSCALE)
 
-    # Estrazione minutiae reali
-    test_minutiae = extract_minutiae_from_skeleton(skel)
-    print(f"Minutiae trovate sullo scheletro: {len(test_minutiae)}")
+    raw_minutiae = extract_minutiae_from_skeleton(skel)
+    refined = postprocess_minutiae(raw_minutiae, skel, gray, params)
 
-    refined = postprocess_minutiae(test_minutiae, skel, gray)
-    print(f"Minutiae finali dopo post-processing: {len(refined)}")
+    logging.info(f"Minutiae finali dopo post-processing: {len(refined)}")
 
     os.makedirs(output_dir, exist_ok=True)
+    img_out = os.path.join(output_dir, f"{sample_name}_minutiae_postprocessed.png")
+    json_out = os.path.join(output_dir, f"{sample_name}_minutiae.json")
 
-    img_out_path = os.path.join(output_dir, f"{sample_name}_minutiae_postprocessed.png")
-    json_out_path = os.path.join(output_dir, f"{sample_name}_minutiae.json")
-
-    vis = cv2.cvtColor(skel, cv2.COLOR_GRAY2BGR)
+    # Visualizzazione dei risultati
+    vis = cv2.cvtColor((skel > 127).astype(np.uint8) * 255, cv2.COLOR_GRAY2BGR)
     for m in refined:
-        x, y = int(m["x"]), int(m["y"])
-        cv2.circle(vis, (x, y), 3, (0, 0, 255), -1)
-    cv2.imwrite(img_out_path, vis)
+        color = (0, 0, 255) if m.get("type") == "ending" else (0, 255, 0)
+        cv2.circle(vis, (int(m["x"]), int(m["y"])), 3, color, -1)
+    cv2.imwrite(img_out, vis)
 
-    for m in refined:
-        m["x"], m["y"] = int(m["x"]), int(m["y"])
-    with open(json_out_path, "w") as f:
+    # Salvataggio in JSON
+    with open(json_out, "w") as f:
         json.dump(refined, f, indent=2)
 
-    print(f"Risultato salvato: {img_out_path}")
-    print(f"Dati minutiae salvati: {json_out_path}")
+    logging.info(f"Risultati salvati in: {output_dir}")
 
 
-# ============================================================
-# 6. Elaborazione batch
-# ============================================================
-def main():
-    input_base = os.path.join("data", "processed", "debug")
-    output_base = os.path.join("data", "features", "minutiae")
+# ------------------------------------------------------------
+# Batch processing
+# ------------------------------------------------------------
+def main(input_base: Optional[str] = None, output_base: Optional[str] = None):
+    """
+    Esegue l'elaborazione di tutte le impronte in una directory di input.
+
+    Parameters
+    ----------
+    input_base : str, optional
+        Percorso base di input.
+    output_base : str, optional
+        Percorso base di output.
+    """
+    input_base = input_base or os.path.join("data", "processed", "debug")
+    output_base = output_base or os.path.join("data", "features", "minutiae")
 
     if not os.path.exists(input_base):
         raise FileNotFoundError(f"Cartella non trovata: {input_base}")
 
     os.makedirs(output_base, exist_ok=True)
-
-    sample_dirs = [
-        os.path.join(input_base, d)
-        for d in os.listdir(input_base)
-        if os.path.isdir(os.path.join(input_base, d))
-    ]
+    sample_dirs = [os.path.join(input_base, d) for d in os.listdir(input_base)
+                   if os.path.isdir(os.path.join(input_base, d))]
 
     if not sample_dirs:
-        print("Nessuna sottocartella trovata.")
+        logging.warning("Nessuna sottocartella trovata.")
         return
 
-    print(f"Trovate {len(sample_dirs)} impronte da elaborare.")
-
+    logging.info(f"Trovate {len(sample_dirs)} impronte da elaborare.")
     for debug_dir in sample_dirs:
-        sample_name = os.path.basename(debug_dir)
-        output_dir = os.path.join(output_base, sample_name)
+        sample_name = os.path.basename(debug_dir.rstrip('/\\'))
         try:
-            process_sample(debug_dir, output_dir)
+            process_sample(debug_dir, os.path.join(output_base, sample_name))
         except Exception as e:
-            print(f"Errore su {sample_name}: {e}")
+            logging.error(f"Errore durante l'elaborazione di {sample_name}: {e}")
 
 
 if __name__ == "__main__":

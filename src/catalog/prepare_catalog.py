@@ -68,14 +68,14 @@ def save_catalog(records, output_csv):
 
 
 def main():
-    print("📁 Scansione del dataset PolyU HRF DBII...")
+    print("Scansione del dataset PolyU HRF DBII...")
 
     dataset_root = config.DATASET_DIR
     output_csv = os.path.join(config.METADATA_DIR, "catalog.csv")
 
     records = scan_dataset(dataset_root)
     if not records:
-        print("⚠️ Nessuna immagine trovata. Controlla il percorso del dataset.")
+        print("Nessuna immagine trovata. Controlla il percorso del dataset.")
         return
 
     save_catalog(records, output_csv)
