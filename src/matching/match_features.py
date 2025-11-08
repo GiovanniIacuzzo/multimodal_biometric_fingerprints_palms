@@ -1,46 +1,37 @@
-import json
-import os
 import math
-from typing import List, Dict, Tuple
+import logging
 from itertools import combinations
+from typing import List, Dict, Tuple
+from src.db.database import load_minutiae_from_db, save_matching_result
 
+# ========================
+# Configurazione logging
+# ========================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S"
+)
+logger = logging.getLogger(__name__)
+
+# ========================
+# Tipi
+# ========================
 Minutia = Dict[str, float]
 
 # ========================
-# Funzioni base
+# Funzioni di utilità
 # ========================
-
-def load_minutiae(file_path: str) -> List[Minutia]:
-    with open(file_path, 'r') as f:
-        data = json.load(f)
-    # Manteniamo anche minutiae di qualità leggermente bassa per Bozorth3
-    return [m for m in data if m['quality'] >= 0.2]
-
-def euclidean_distance(p1: Tuple[float, float], p2: Tuple[float, float]) -> float:
+def euclidean_distance(p1: Tuple[float,float], p2: Tuple[float,float]) -> float:
     return math.hypot(p1[0]-p2[0], p1[1]-p2[1])
 
 def angle_between(p1: Tuple[float,float], p2: Tuple[float,float]) -> float:
     return math.atan2(p2[1]-p1[1], p2[0]-p1[0])
 
-def save_results(results: Dict[Tuple[str,str], float], output_file: str):
-    """
-    Salva i risultati del batch matching in un file JSON.
-    La chiave (user1, user2) viene convertita in stringa 'user1_vs_user2'.
-    """
-    json_dict = {f"{u1}_vs_{u2}": score for (u1, u2), score in results.items()}
-    with open(output_file, 'w') as f:
-        json.dump(json_dict, f, indent=4)
-    print(f"Risultati salvati in {output_file}")
-
 # ========================
-# Creazione coppie di minutiae
+# Creazione coppie
 # ========================
-
 def build_pairs(minutiae: List[Minutia]) -> List[Tuple[Tuple[int,int], float, float]]:
-    """
-    Ritorna lista di coppie di minutiae:
-    ((idx1, idx2), distanza, angolo)
-    """
     pairs = []
     for (i1, m1), (i2, m2) in combinations(enumerate(minutiae), 2):
         if m1['type'] != m2['type']:
@@ -48,64 +39,69 @@ def build_pairs(minutiae: List[Minutia]) -> List[Tuple[Tuple[int,int], float, fl
         d = euclidean_distance((m1['x'], m1['y']), (m2['x'], m2['y']))
         a = angle_between((m1['x'], m1['y']), (m2['x'], m2['y']))
         pairs.append(((i1, i2), d, a))
+    logger.debug(f"Generate {len(pairs)} valid pairs.")
     return pairs
 
 # ========================
 # Matching coppie
 # ========================
-
 def match_pairs(pairs1, pairs2, dist_thresh=25.0, angle_thresh=0.5) -> int:
-    """
-    Confronta due insiemi di coppie di minutiae.
-    Ritorna il numero di coppie corrispondenti.
-    """
     matched = 0
     for (_, d1, a1) in pairs1:
         for (_, d2, a2) in pairs2:
             if abs(d1 - d2) <= dist_thresh and abs(a1 - a2) <= angle_thresh:
                 matched += 1
                 break
+    logger.debug(f"Matched {matched} pairs (thresholds: dist={dist_thresh}, angle={angle_thresh})")
     return matched
 
 # ========================
-# Matching tra due utenti
+# Matching due immagini
 # ========================
+def match_two_images(image_id_a: int, image_id_b: int) -> float:
+    logger.info(f"Inizio matching: immagine {image_id_a} vs {image_id_b}")
+    minutiae1 = load_minutiae_from_db(image_id_a)
+    minutiae2 = load_minutiae_from_db(image_id_b)
 
-def match_two_users(user1_path: str, user2_path: str) -> float:
-    minutiae1 = load_minutiae(user1_path)
-    minutiae2 = load_minutiae(user2_path)
     if len(minutiae1) < 2 or len(minutiae2) < 2:
+        logger.warning(f"Immagini {image_id_a} o {image_id_b} con minutiae insufficienti "
+                       f"({len(minutiae1)}, {len(minutiae2)}).")
         return 0.0
+
+    logger.debug(f"Immagine {image_id_a}: {len(minutiae1)} minutiae | "
+                 f"Immagine {image_id_b}: {len(minutiae2)} minutiae")
+
     pairs1 = build_pairs(minutiae1)
     pairs2 = build_pairs(minutiae2)
     matched_pairs = match_pairs(pairs1, pairs2)
     total_pairs = max(len(pairs1), len(pairs2))
-    return matched_pairs / total_pairs if total_pairs > 0 else 0.0
+    score = matched_pairs / total_pairs if total_pairs > 0 else 0.0
+
+    logger.info(f"Completato matching {image_id_a} vs {image_id_b} → score={score:.4f} "
+                f"(matched {matched_pairs}/{total_pairs})")
+    return score
 
 # ========================
 # Batch matching
 # ========================
-
-def batch_match(features_dir: str) -> Dict[Tuple[str,str], float]:
+def batch_match(image_ids: List[int], method: str = "pair_matching") -> Dict[Tuple[int,int], float]:
+    """
+    Esegue matching tra tutte le coppie di immagini specificate.
+    Salva i risultati in DB.
+    """
     results = {}
-    results_file = os.path.join(features_dir, "batch_match_results.json")
-    users = [d for d in os.listdir(features_dir) if os.path.isdir(os.path.join(features_dir,d))]
-    for i, u1 in enumerate(users):
-        for j, u2 in enumerate(users):
-            if j <= i:
-                continue
-            u1_files = [f for f in os.listdir(os.path.join(features_dir,u1)) if f.endswith('_minutiae.json')]
-            u2_files = [f for f in os.listdir(os.path.join(features_dir,u2)) if f.endswith('_minutiae.json')]
-            max_score = 0.0
-            for f1 in u1_files:
-                for f2 in u2_files:
-                    path1 = os.path.join(features_dir,u1,f1)
-                    path2 = os.path.join(features_dir,u2,f2)
-                    score = match_two_users(path1, path2)
-                    if score > max_score:
-                        max_score = score
-            results[(u1,u2)] = max_score
-        
-        save_results(results, results_file)
+    total = len(image_ids)
+    logger.info(f"Avvio batch matching su {total} immagini ({total*(total-1)//2} confronti previsti)")
 
+    for i, a_id in enumerate(image_ids):
+        for b_id in image_ids[i+1:]:
+            try:
+                score = match_two_images(a_id, b_id)
+                results[(a_id, b_id)] = score
+                save_matching_result(a_id, b_id, score, method)
+            except Exception as e:
+                logger.error(f"Errore durante il matching {a_id} vs {b_id}: {e}")
+                continue
+
+    logger.info(f"Batch matching completato con successo ({len(results)} confronti salvati)")
     return results

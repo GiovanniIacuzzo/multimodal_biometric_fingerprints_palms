@@ -182,8 +182,8 @@ def segment_fingerprint(img: np.ndarray, debug_dir: Optional[str] = None) -> Tup
 
     if debug_dir:
         os.makedirs(debug_dir, exist_ok=True)
-        cv2.imwrite(os.path.join(debug_dir, "segment_cropped.png"), cropped)
-        cv2.imwrite(os.path.join(debug_dir, "segment_mask.png"), cropped_mask)
+        cv2.imwrite(os.path.join(debug_dir, "segment_cropped.jpg"), cropped)
+        cv2.imwrite(os.path.join(debug_dir, "segment_mask.jpg"), cropped_mask)
 
     return cropped, cropped_mask
 
@@ -248,13 +248,13 @@ def preprocess_fingerprint(img: np.ndarray, debug_dir: Optional[str] = None) -> 
         if debug_dir:
             try:
                 os.makedirs(debug_dir, exist_ok=True)
-                cv2.imwrite(os.path.join(debug_dir, "normalized.png"), normalized)
-                cv2.imwrite(os.path.join(debug_dir, "denoised.png"), denoised)
-                cv2.imwrite(os.path.join(debug_dir, "segmented.png"), segmented)
-                cv2.imwrite(os.path.join(debug_dir, "mask.png"), mask)
-                cv2.imwrite(os.path.join(debug_dir, "binary.png"), binary)
-                cv2.imwrite(os.path.join(debug_dir, "skeleton.png"), skeleton)
-                cv2.imwrite(os.path.join(debug_dir, "orientation_vis.png"), orientation_vis)
+                cv2.imwrite(os.path.join(debug_dir, "normalized.jpg"), normalized)
+                cv2.imwrite(os.path.join(debug_dir, "denoised.jpg"), denoised)
+                cv2.imwrite(os.path.join(debug_dir, "segmented.jpg"), segmented)
+                cv2.imwrite(os.path.join(debug_dir, "mask.jpg"), mask)
+                cv2.imwrite(os.path.join(debug_dir, "binary.jpg"), binary)
+                cv2.imwrite(os.path.join(debug_dir, "skeleton.jpg"), skeleton)
+                cv2.imwrite(os.path.join(debug_dir, "orientation_vis.jpg"), orientation_vis)
             except Exception:
                 pass  # non bloccare la pipeline se il salvataggio fallisce
 

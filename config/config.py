@@ -43,8 +43,6 @@ DATASET_DIR    = _get_path("dataset_dir", "./dataset/DBII")
 PROCESSED_DIR  = _get_path("processed_dir", "./data/processed")
 FEATURES_DIR   = _get_path("features_dir", "./data/features")
 METADATA_DIR   = _get_path("metadata_dir", "./data/metadata")
-LOG_DIR        = _get_path("log_dir", "./logs")
-TEMP_DIR       = _get_path("temp_dir", "./temp")
 DEBUG_DIR      = _get_path("debug_dir", "./data/features/debug")
 
 # =====================================================
