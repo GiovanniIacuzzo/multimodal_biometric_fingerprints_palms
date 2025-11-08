@@ -32,11 +32,11 @@ def run_pipeline():
         clear_database()
 
         # -------------------------------------------------
-        print("\n[1/4] Preparazione catalogo...")
+        print("\n[1/5] Preparazione catalogo...")
         prepare_catalog()
 
         # -------------------------------------------------
-        print("\n[2/4] Preprocessing immagini...")
+        print("\n[2/5] Preprocessing immagini...")
         start_pre = time.time()
         run_preprocessing(
             input_dir=config.DATASET_DIR,
@@ -47,13 +47,13 @@ def run_pipeline():
         print(f"[INFO] Preprocessing completato in {time.time()-start_pre:.2f} sec")
 
         # -------------------------------------------------
-        print("\n[3/4] Estrazione minutiae...")
+        print("\n[3/5] Estrazione minutiae...")
         start_feat = time.time()
         extract_minutiae()
         print(f"[INFO] Estrazione minutiae completata in {time.time()-start_feat:.2f} sec")
 
         # -------------------------------------------------
-        print("\n[4/4] Matching impronte...")
+        print("\n[4/5] Matching impronte...")
         image_ids = get_all_image_ids()
         match_results = batch_match(image_ids)
 
@@ -67,6 +67,9 @@ def run_pipeline():
 
         with open(results_path, "w") as f:
             json.dump(json_results, f, indent=4)
+
+        # -------------------------------------------------
+        print("\n[5/5] Valutazione performance...")
 
         # Valutazione finale
         metrics = evaluate_results(results_path, output_path=os.path.join(config.METADATA_DIR, "performance_metrics.json"), plot_dir=config.METADATA_DIR)
