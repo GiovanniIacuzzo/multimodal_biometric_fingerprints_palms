@@ -1,52 +1,91 @@
-# demo/clustering_utils.py
 import numpy as np
-import re
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.decomposition import PCA
-from pathlib import Path
 from sklearn.metrics import silhouette_score
 
-# =====================================================
-# STANDARDIZZAZIONE
-# =====================================================
+# -------------------------
+# Utility thresholds sugli std_angle
+# -------------------------
+def estimate_adaptive_thresholds(std_angles, percentiles=(33, 66)):
+    t1 = float(np.percentile(std_angles, percentiles[0]))
+    t2 = float(np.percentile(std_angles, percentiles[1]))
+    return t1, t2
+
+def assign_global_label(std_angle, thresholds=None):
+    """
+    Assegna una delle tre classi globali basata su std_angle (in gradi).
+    thresholds: (t1, t2) oppure None -> default empirico
+    """
+    if thresholds is None:
+        t1, t2 = 20.0, 45.0
+    else:
+        t1, t2 = thresholds
+    if std_angle < t1:
+        return "Arch"
+    elif std_angle < t2:
+        return "Loop"
+    else:
+        return "Whorl"
+
+# -------------------------
+# Standardizzazione globale (su vettori padded)
+# -------------------------
 def standardize_global_features(features_dict):
-    """Applica StandardScaler globale in modo robusto."""
+    """
+    features_dict: {class: [(id, feat_vector), ...]}
+    Restituisce (features_dict_scaled, scaler). I vettori sono scalati e mantenuti nelle stesse dimensioni.
+    """
     all_feats = []
+    keys = []
     for cls, lst in features_dict.items():
-        for _, f in lst:
-            all_feats.append(f)
+        for _id, feat in lst:
+            all_feats.append(feat)
+            keys.append((cls, _id))
+
     if not all_feats:
         return features_dict, None
 
     max_len = max(f.shape[0] for f in all_feats)
     stacked = np.zeros((len(all_feats), max_len), dtype=np.float32)
     for i, f in enumerate(all_feats):
-        stacked[i, :f.shape[0]] = f
+        stacked[i, : f.shape[0]] = f
 
     if stacked.shape[0] < 2:
         return features_dict, None
 
     scaler = StandardScaler().fit(stacked)
-    for cls, img_feats_list in features_dict.items():
-        for i, (path, feat) in enumerate(img_feats_list):
-            padded = np.zeros((max_len,), dtype=np.float32)
-            padded[:feat.shape[0]] = feat
-            scaled = scaler.transform(padded.reshape(1, -1)).flatten()
-            features_dict[cls][i] = (path, scaled[:feat.shape[0]])
+    transformed = scaler.transform(stacked)
+
+    # rimappa i vettori scalati alla struttura originale (tagliando il padding)
+    idx = 0
+    for cls, lst in features_dict.items():
+        for j in range(len(lst)):
+            _id, feat = lst[j]
+            orig_len = feat.shape[0]
+            scaled = transformed[idx, :orig_len].astype(np.float32)
+            features_dict[cls][j] = (_id, scaled)
+            idx += 1
+
     return features_dict, scaler
 
-# =====================================================
-# KMEANS ROBUSTO + FALLBACK DBSCAN
-# =====================================================
+# -------------------------
+# consensus_kmeans robusto con fallback DBSCAN
+# -------------------------
 def consensus_kmeans(feats_matrix, max_k=5, n_repeats=5, min_cluster_size=3):
+    """
+    feats_matrix: numpy array (n_samples, n_features)
+    Ritorna: labels (n_samples,), best_silhouette_score float
+    """
     n_samples = feats_matrix.shape[0]
     if n_samples <= 1:
         return np.zeros(n_samples, dtype=int), 0.0
 
+    # Standardize (interno)
     scaler = StandardScaler()
     feats_std = scaler.fit_transform(feats_matrix)
 
+    # PCA per ridurre dimensionalità (ma manteniamo quanto possibile)
     n_pca = min(30, feats_std.shape[1], n_samples)
     if n_pca < 1:
         n_pca = 1
@@ -54,7 +93,7 @@ def consensus_kmeans(feats_matrix, max_k=5, n_repeats=5, min_cluster_size=3):
 
     best_score = -1.0
     best_labels = np.zeros(n_samples, dtype=int)
-    max_k_test = min(max_k, n_samples - 1)
+    max_k_test = min(max_k, max(2, n_samples - 1))
 
     for k in range(2, max_k_test + 1):
         all_labels = []
@@ -63,6 +102,7 @@ def consensus_kmeans(feats_matrix, max_k=5, n_repeats=5, min_cluster_size=3):
             lbl = km.fit_predict(feats_pca)
             all_labels.append(lbl)
         all_labels = np.array(all_labels)
+        # consensus via majority vote per sample
         labels = np.array([np.bincount(all_labels[:, i]).argmax() for i in range(n_samples)])
         try:
             score = silhouette_score(feats_pca, labels)
@@ -72,7 +112,7 @@ def consensus_kmeans(feats_matrix, max_k=5, n_repeats=5, min_cluster_size=3):
             best_score = score
             best_labels = labels.copy()
 
-    # fallback DBSCAN
+    # fallback DBSCAN se silhouette debole
     if best_score < 0.25:
         db = DBSCAN(eps=0.8, min_samples=3).fit(feats_pca)
         db_labels = db.labels_
@@ -92,7 +132,7 @@ def consensus_kmeans(feats_matrix, max_k=5, n_repeats=5, min_cluster_size=3):
                 except Exception:
                     pass
 
-    # merge cluster piccoli
+    # Merge cluster troppo piccoli (min_cluster_size)
     final_labels = np.array(best_labels)
     unique = np.unique(final_labels)
     centroids = {c: feats_pca[final_labels == c].mean(axis=0) for c in unique}
@@ -103,96 +143,41 @@ def consensus_kmeans(feats_matrix, max_k=5, n_repeats=5, min_cluster_size=3):
             for idx in idxs:
                 dists = [np.linalg.norm(feats_pca[idx] - centroids[oc]) for oc in other]
                 final_labels[idx] = other[int(np.argmin(dists))]
+
     return final_labels, float(best_score)
 
-# =====================================================
-# SOGLIE ADATTIVE
-# =====================================================
-def estimate_adaptive_thresholds(std_angles, percentiles=(33, 66)):
-    t1 = np.percentile(std_angles, percentiles[0])
-    t2 = np.percentile(std_angles, percentiles[1])
-    return t1, t2
-
-# =====================================================
-# ASSEGNAZIONE CLASSE GLOBALE
-# =====================================================
-def assign_global_label(std_angle, thresholds):
+# -------------------------
+# internal_clustering: ora lavora a livello ID
+# -------------------------
+def internal_clustering(features_dict, max_k_clusters=5, min_cluster_size=3):
     """
-    Assegna una classe globale in base allo std_angle e alle soglie adattive.
-    Output: 'Arch', 'Loop' o 'Whorl'
+    features_dict: {class: [(id, feat), ...]}
+    Restituisce lista di tuples: [(id, class, cluster_label), ...]
     """
-    t1, t2 = thresholds
-    if std_angle < t1:
-        return "Arch"
-    elif std_angle < t2:
-        return "Loop"
-    else:
-        return "Whorl"
-
-# =====================================================
-# CLUSTERING INTERNO PER OGNI CLASSE
-# =====================================================
-
-def internal_clustering(features_dict, max_k_clusters=5):
     results = []
 
-    for global_class, img_feats_list in features_dict.items():
-        if not img_feats_list:
+    for global_class, id_feats_list in features_dict.items():
+        if not id_feats_list:
             continue
 
-        # === Raggruppa per ID ===
-        id_groups = {}
-        for path, feat in img_feats_list:
-            path = Path(path)
-            fname = path.stem
+        ids = [t[0] for t in id_feats_list]
+        feats = np.array([t[1] for t in id_feats_list], dtype=np.float32)
+        n_ids = len(ids)
 
-            # L'ID è tutto ciò che precede il primo underscore
-            file_id = fname.split("_")[0].lstrip("0") or "0"
-
-            # Aggiunge alla lista di immagini per quell'ID
-            id_groups.setdefault(file_id, []).append((path, feat))
-
-        # === Calcola il vettore medio per ciascun ID ===
-        id_features = []
-        id_keys = []
-        for file_id, items in id_groups.items():
-            feats = np.array([f for _, f in items if f is not None])
-            if feats.size == 0:
-                continue
-            mean_feat = feats.mean(axis=0)
-            id_features.append(mean_feat)
-            id_keys.append(file_id)
-
-        id_features = np.array(id_features, dtype=np.float32)
-        n_ids = len(id_keys)
-
-        if n_ids == 0:
-            print(f"⚠️ Nessuna feature valida per {global_class}")
-            continue
-
-        # === Clustering a livello di ID ===
         if n_ids == 1:
             id_labels = np.zeros(n_ids, dtype=int)
             score = 0.0
         else:
             try:
-                id_labels, score = consensus_kmeans(id_features, max_k=max_k_clusters)
+                id_labels, score = consensus_kmeans(feats, max_k=max_k_clusters, min_cluster_size=min_cluster_size)
             except Exception as e:
-                print(f"⚠️ Errore in consensus_kmeans per {global_class}: {e}")
+                print(f"Errore in consensus_kmeans per {global_class}: {e}")
                 id_labels = np.zeros(n_ids, dtype=int)
                 score = 0.0
 
-        print(f"📊 {global_class}: {len(np.unique(id_labels))} cluster "
-              f"su {n_ids} ID (silhouette={score:.3f})")
+        print(f"{global_class}: {len(np.unique(id_labels))} cluster su {n_ids} ID (silhouette={score:.3f})")
 
-        # === Assegna la label di cluster a tutte le immagini di quell’ID ===
-        for lbl, file_id in zip(id_labels, id_keys):
-            for path, _ in id_groups[file_id]:
-                results.append([
-                    path.name,        # filename
-                    str(path),        # percorso completo
-                    global_class,     # classe globale (Arch/Loop/Whorl)
-                    int(lbl)          # cluster locale
-                ])
+        for fid, lbl in zip(ids, id_labels):
+            results.append((str(fid), global_class, int(lbl)))
 
     return results

@@ -1,116 +1,136 @@
 import os
 import csv
-import cv2
-import numpy as np
 from pathlib import Path
 from tqdm import tqdm
-
-# === Importa moduli locali ===
+import numpy as np
+import cv2
 from demo.feature_fun import (
     normalize,
+    auto_rotate_90,
     compute_orientation_field,
     classify_std_angle,
-    extract_multi_scale_features,
-    standardize_global_features,
-)
+    extract_rotation_invariant_features
+    )
 from demo.clustering_utils import (
     assign_global_label,
     estimate_adaptive_thresholds,
     internal_clustering,
+    standardize_global_features
 )
 from demo.visualization import plot_class_distribution, interactive_tsne
 from demo.config import DATASET_DIR, OUTPUT_CSV, MAX_K_CLUSTERS, CONFIDENCE_THRESHOLD
 
-# ============================================================
-# STEP 1 — CARICAMENTO IMMAGINI
-# ============================================================
 def load_and_preprocess_images(dataset_dir: Path):
     """
     Carica e normalizza tutte le immagini del dataset.
-    Rimuove quelle troppo rumorose (soglia CONFIDENCE_THRESHOLD).
+    Applica auto-rotazione in step di 90°. Raggruppa immagini per ID.
     """
     all_imgs = sorted(dataset_dir.glob("**/*.jpg"))
-    print(f"🔍 Found {len(all_imgs)} images in {dataset_dir}")
+    print(f"Found {len(all_imgs)} images in {dataset_dir}")
 
-    valid_images = []
-    std_angles = []
+    id_groups = {}
     discarded = 0
+    kept = 0
 
     for img_path in tqdm(all_imgs, desc="Preprocessing images"):
-        img = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
+        img = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE) if 'cv2' in globals() else None
+        import cv2 as _cv2
+        img = _cv2.imread(str(img_path), _cv2.IMREAD_GRAYSCALE)
         if img is None:
             discarded += 1
             continue
 
         img_norm = normalize(img)
-        std_ang = classify_std_angle(compute_orientation_field(img_norm))
+        img_rot = auto_rotate_90(img_norm)
+        std_ang = classify_std_angle(compute_orientation_field(img_rot))
 
-        # Scarta immagini troppo piatte o rumorose
         if std_ang < CONFIDENCE_THRESHOLD:
             discarded += 1
             continue
 
-        valid_images.append((img_path, img_norm, std_ang))
-        std_angles.append(std_ang)
+        fname = img_path.stem
+        file_id = fname.split("_")[0].lstrip("0") or fname.split("_")[0]
+        id_groups.setdefault(file_id, []).append((img_path, img_rot, std_ang))
+        kept += 1
 
-    print(f"✅ Kept {len(valid_images)} valid images | ❌ Discarded {discarded} noisy images\n")
-    return valid_images, np.array(std_angles)
+    print(f"Kept {kept} valid images | Discarded {discarded} noisy images\n")
+    return id_groups
 
+# ----------------------------
+# STEP 2: Calcolo soglie adattive e assegnazione classe per ID
+# ----------------------------
+def assign_labels_by_id(id_groups):
+    id_std = {fid: float(np.mean([s for _, _, s in imgs])) for fid, imgs in id_groups.items()}
+    adaptive_thresholds = estimate_adaptive_thresholds(list(id_std.values()))
+    print(f"Adaptive thresholds (ID-level): t1={adaptive_thresholds[0]:.2f}, t2={adaptive_thresholds[1]:.2f}\n")
+    id_labels = {fid: assign_global_label(std, adaptive_thresholds) for fid, std in id_std.items()}
+    return id_labels, adaptive_thresholds
 
-# ============================================================
-# STEP 2 — ESTRAZIONE FEATURE
-# ============================================================
-def extract_features(valid_images, adaptive_thresholds):
+# ----------------------------
+# STEP 3: Estrazione feature per ID
+# ----------------------------
+def extract_features_by_id(id_groups, id_labels):
     """
-    Estrae feature multi-scala e assegna la classe globale (Arch, Loop, Whorl)
-    in base alle soglie adattive.
+    Restituisce features_dict: {class: [(id, feat), ...]}
+    Le feature sono la media delle feature rotation-invariant delle immagini appartenenti allo stesso ID.
     """
     features_dict = {}
-
-    for img_path, img_norm, std_ang in tqdm(valid_images, desc="Extracting features"):
-        global_label = assign_global_label(std_ang, adaptive_thresholds)
-        feats = extract_multi_scale_features(img_norm)
-        features_dict.setdefault(global_label, []).append((img_path, feats))
-
+    for fid, imgs in tqdm(id_groups.items(), desc="Extracting ID features"):
+        feats_all = []
+        for img_path, img, std in imgs:
+            feat = extract_rotation_invariant_features(img)
+            feats_all.append(feat)
+        if not feats_all:
+            continue
+        mean_feat = np.mean(np.stack(feats_all, axis=0), axis=0)
+        cls = id_labels[fid]
+        features_dict.setdefault(cls, []).append((fid, mean_feat.astype(np.float32)))
     return features_dict
 
-
-# ============================================================
-# STEP 3 — PIPELINE COMPLETA
-# ============================================================
+# ----------------------------
+# STEP 4: Pipeline principale
+# ----------------------------
 def main():
-    # === 1. Caricamento e pre-elaborazione ===
-    valid_images, std_angles = load_and_preprocess_images(DATASET_DIR)
+    os.makedirs(os.path.dirname(str(OUTPUT_CSV)), exist_ok=True)
 
-    # === 2. Calcolo soglie adattive ===
-    adaptive_thresholds = estimate_adaptive_thresholds(std_angles)
-    print(f"📈 Adaptive thresholds: t1={adaptive_thresholds[0]:.2f}, t2={adaptive_thresholds[1]:.2f}\n")
+    id_groups = load_and_preprocess_images(DATASET_DIR)
+    if not id_groups:
+        print("Nessuna immagine valida trovata. Esco.")
+        return
 
-    # === 3. Estrazione feature multi-scala e classificazione globale ===
-    features_dict = extract_features(valid_images, adaptive_thresholds)
+    id_labels, adaptive_thresholds = assign_labels_by_id(id_groups)
+    features_dict = extract_features_by_id(id_groups, id_labels)
 
-    # === 4. Standardizzazione globale ===
-    features_dict, _ = standardize_global_features(features_dict)
-    print("⚙️  Global standardization completed.\n")
+    # Standardizzazione globale
+    features_dict, scaler = standardize_global_features(features_dict)
+    print("Global standardization completed.\n")
 
-    # === 5. Clustering interno per ogni classe ===
-    final_results = internal_clustering(features_dict, max_k_clusters=MAX_K_CLUSTERS)
-    print("✅ Internal clustering completed.\n")
+    # Clustering interno (a livello ID)
+    final_id_results = internal_clustering(features_dict, max_k_clusters=MAX_K_CLUSTERS)
+    print("Internal clustering completed.\n")
 
-    # === 6. Salvataggio CSV finale ===
-    os.makedirs(os.path.dirname(OUTPUT_CSV), exist_ok=True)
+    rows = []
+    # final_id_results: [(id, class, cluster)]
+    id_to_cluster = {fid: (cls, cluster) for fid, cls, cluster in final_id_results}
+    for fid, imgs in id_groups.items():
+        if fid not in id_to_cluster:
+            cls = id_labels.get(fid, "Unknown")
+            cluster = 0
+        else:
+            cls, cluster = id_to_cluster[fid]
+        for img_path, _, _ in imgs:
+            rows.append([img_path.name, str(img_path), cls, int(cluster)])
+
+    # Write CSV
     with open(OUTPUT_CSV, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["filename", "path", "global_class", "cluster_in_class"])
-        writer.writerows(final_results)
-    print(f"💾 Saved final labeled dataset to {OUTPUT_CSV}\n")
+        writer.writerows(rows)
+    print(f"Saved final labeled dataset to {OUTPUT_CSV}\n")
 
-    # === 7. Visualizzazioni (facoltative) ===
-    try:
-        plot_class_distribution(final_results)
-        interactive_tsne(features_dict, final_results)
-    except Exception as e:
-        print(f"⚠️ Visualization skipped due to: {e}")
+    # Visualizzazioni (facoltative)
+    # plot_class_distribution(rows)
+    # interactive_tsne(features_dict, final_id_results, FIGURE_DIR=OUTPUT_CSV)
 
 
 if __name__ == "__main__":
