@@ -55,7 +55,7 @@ def run_pipeline():
         # -------------------------------------------------
         print("\n[4/5] Matching impronte...")
         filenames = get_all_image_filenames()
-        match_results = batch_match(filenames)
+        match_results = batch_match(filenames, device="mps")
 
         print("\nRisultati matching:")
         """ for pair, score in match_results.items():

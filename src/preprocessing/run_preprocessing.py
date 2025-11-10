@@ -6,6 +6,7 @@ import traceback
 import numpy as np
 from tqdm import tqdm
 from config import config
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from src.preprocessing.fingerprint_preprocess import preprocess_fingerprint
 import logging
 from src.db.database import save_image_record, ensure_subject
@@ -58,12 +59,12 @@ def save_debug_images(results: dict, output_dir: str, base_name: str):
 # ====================================================
 # MAIN PIPELINE
 # ====================================================
-
 def run_preprocessing(
     input_dir: str = config.DATASET_DIR,
     output_dir: str = config.PROCESSED_DIR,
     debug: bool = True,
-    small_subset: bool = False
+    small_subset: bool = False,
+    max_workers: int = 4  # numero di thread paralleli
 ):
     """Applica il preprocessing completo su un dataset di impronte digitali."""
     # Filtra immagini valide
@@ -88,12 +89,11 @@ def run_preprocessing(
     if debug:
         os.makedirs(debug_dir_base, exist_ok=True)
 
-    # Loop principale
-    for file_name in tqdm(image_files, desc="Preprocessing immagini", ncols=100):
+    def process_single_image(file_name: str):
         img_path = os.path.join(input_dir, file_name)
         img = load_image(img_path)
         if img is None:
-            continue
+            return None, file_name
 
         try:
             start_time = time.time()
@@ -124,14 +124,23 @@ def run_preprocessing(
                 orientation_mean=float(np.mean(results["orientation_map"])) if "orientation_map" in results else None,
                 preprocessing_time=duration
             )
-            if image_id:
-                # logging.info(f"Immagine '{file_name}' salvata con image_id={image_id}")
-                continue
-            else:
-                logging.warning(f"Immagine '{file_name}' NON salvata nel DB!")
+            return image_id, file_name
+
         except Exception as e:
             logging.error(f"Preprocessing fallito per {file_name}: {e}")
             traceback.print_exc()
+            return None, file_name
+
+    # =======================================
+    # Esecuzione parallela
+    # =======================================
+    results_summary = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(process_single_image, f): f for f in image_files}
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Preprocessing immagini", ncols=100):
+            image_id, file_name = future.result()
+            if image_id is None:
+                logging.warning(f"Immagine '{file_name}' NON processata!")
 
     logging.info("Preprocessing completato con successo!")
     logging.info(f"Risultati salvati in: {output_dir}")
