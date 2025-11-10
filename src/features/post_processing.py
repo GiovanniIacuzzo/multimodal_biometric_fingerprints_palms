@@ -117,10 +117,10 @@ def postprocess_minutiae(minutiae: List[Dict],
         enriched.append(m)
 
     refined = nms_min_distance(enriched, min_dist)
-    logging.info(f"Prima filtro orientamento: {len(refined)}")
+    # logging.info(f"Prima filtro orientamento: {len(refined)}")
     refined = remove_redundant_oriented(refined, 20.0, np.deg2rad(30))
-    logging.info(f"Dopo filtro orientamento: {len(refined)}")
+    # logging.info(f"Dopo filtro orientamento: {len(refined)}")
 
     refined = sorted(refined, key=lambda m: float(m["quality"]), reverse=True)[:max_m]
-    logging.info(f"Totale minutiae finali: {len(refined)}")
+    # logging.info(f"Totale minutiae finali: {len(refined)}")
     return refined

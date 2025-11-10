@@ -4,6 +4,7 @@ import logging
 from typing import List, Dict, Optional
 import numpy as np
 import cv2
+from tqdm import tqdm
 import time
 from src.features.post_processing import postprocess_minutiae
 from src.db.database import get_image_id_by_filename, save_minutiae, save_features_summary
@@ -68,7 +69,7 @@ def extract_minutiae_from_skeleton(skel: np.ndarray) -> List[Dict]:
         sk = bin_neg
         chosen = "<=127"
 
-    logging.info(f"Binarizzazione scelta: {chosen} (pixel ON = {sk.sum()})")
+    # logging.info(f"Binarizzazione scelta: {chosen} (pixel ON = {sk.sum()})")
 
     sk_thin = thin_skeleton((sk * 255).astype(np.uint8))
     if sk_thin.sum() == 0:
@@ -94,7 +95,7 @@ def extract_minutiae_from_skeleton(skel: np.ndarray) -> List[Dict]:
         elif CN == 3:
             minutiae.append({"x": int(x), "y": int(y), "type": "bifurcation"})
 
-    logging.info(f"Minutiae grezze estratte: {len(minutiae)}")
+    # logging.info(f"Minutiae grezze estratte: {len(minutiae)}")
     return minutiae
 
 # ============================================================
@@ -102,8 +103,8 @@ def extract_minutiae_from_skeleton(skel: np.ndarray) -> List[Dict]:
 # ============================================================
 def process_sample(debug_dir: str, output_dir: str, params: Optional[Dict] = None) -> None:
     sample_name = os.path.basename(debug_dir.rstrip("/\\"))
-    print("=====================================")
-    logging.info(f"Inizio elaborazione campione: {sample_name}")
+    # print("=====================================")
+    #logging.info(f"Inizio elaborazione campione: {sample_name}")
 
     skel_path = os.path.join(debug_dir, f"{sample_name}_skeleton.jpg")
     gray_path = os.path.join(debug_dir, f"{sample_name}_segmented.jpg")
@@ -125,7 +126,7 @@ def process_sample(debug_dir: str, output_dir: str, params: Optional[Dict] = Non
     refined = postprocess_minutiae(raw_minutiae, skel, gray, params)
     duration = time.time() - start_time
 
-    logging.info(f"Minutiae dopo post-processing: {len(refined)} (tempo: {duration:.2f}s)")
+    # logging.info(f"Minutiae dopo post-processing: {len(refined)} (tempo: {duration:.2f}s)")
 
     # Recupero ID immagine
     image_id = get_image_id_by_filename(f"{sample_name}.jpg")
@@ -133,12 +134,12 @@ def process_sample(debug_dir: str, output_dir: str, params: Optional[Dict] = Non
         logging.warning(f"Nessuna voce trovata nel database per '{sample_name}.jpg'.")
         return
 
-    logging.info(f"Immagine associata a image_id={image_id}")
+    # logging.info(f"Immagine associata a image_id={image_id}")
 
     # Salvataggio minutiae nel DB
     if refined:
         save_minutiae(image_id, refined)
-        logging.info(f"Salvate {len(refined)} minutiae nel database.")
+        # logging.info(f"Salvate {len(refined)} minutiae nel database.")
     else:
         logging.warning(f"Nessuna minutiae da salvare per '{sample_name}'.")
 
@@ -169,8 +170,8 @@ def process_sample(debug_dir: str, output_dir: str, params: Optional[Dict] = Non
     with open(json_out, "w") as f:
         json.dump(refined, f, indent=2)
 
-    logging.info(f"Risultati salvati in: {output_dir}")
-    logging.info(f"Fine elaborazione campione: {sample_name}\n")
+    # logging.info(f"Risultati salvati in: {output_dir}")
+    # logging.info(f"Fine elaborazione campione: {sample_name}\n")
 
 # ============================================================
 # ELABORAZIONE IN BATCH
@@ -193,19 +194,15 @@ def main(input_base: Optional[str] = None, output_base: Optional[str] = None):
         logging.warning("Nessuna sottocartella trovata da elaborare.")
         return
 
-    logging.info(f"Trovate {len(sample_dirs)} impronte da elaborare.\n")
-
-    for debug_dir in sample_dirs:
+    # Creiamo la barra di avanzamento
+    print(f"Trovate {len(sample_dirs)} impronte da elaborare.\n")
+    for debug_dir in tqdm(sample_dirs, desc="Elaborazione impronte", unit="impronta"):
         try:
-            process_sample(debug_dir, os.path.join(output_base, os.path.basename(debug_dir.rstrip('/\\'))))
-            print("=====================================")
+            process_sample(
+                debug_dir,
+                os.path.join(output_base, os.path.basename(debug_dir.rstrip('/\\')))
+            )
         except Exception as e:
             logging.error(f"Errore durante l'elaborazione di '{os.path.basename(debug_dir)}': {e}")
 
-    logging.info("Elaborazione batch completata.")
-
-# ============================================================
-# ENTRY POINT
-# ============================================================
-if __name__ == "__main__":
-    main()
+    print("\nElaborazione batch completata.")

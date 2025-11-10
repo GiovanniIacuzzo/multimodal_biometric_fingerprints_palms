@@ -1,8 +1,14 @@
 import math
+import time
 import logging
 from itertools import combinations
 from typing import List, Dict, Tuple
-from src.db.database import load_minutiae_from_db, save_matching_result
+from tqdm import tqdm
+from src.db.database import (
+    load_minutiae_from_db,
+    save_matching_result,
+    get_image_id_by_filename,
+)
 
 # ========================
 # Configurazione logging
@@ -22,86 +28,127 @@ Minutia = Dict[str, float]
 # ========================
 # Funzioni di utilità
 # ========================
-def euclidean_distance(p1: Tuple[float,float], p2: Tuple[float,float]) -> float:
-    return math.hypot(p1[0]-p2[0], p1[1]-p2[1])
+def euclidean_distance(m1: Minutia, m2: Minutia) -> float:
+    return math.hypot(m1["x"] - m2["x"], m1["y"] - m2["y"])
 
-def angle_between(p1: Tuple[float,float], p2: Tuple[float,float]) -> float:
-    return math.atan2(p2[1]-p1[1], p2[0]-p1[0])
+def orientation_difference(m1: Minutia, m2: Minutia) -> float:
+    """Differenza angolare tra due minutiae"""
+    return abs(m1["orientation"] - m2["orientation"])
 
 # ========================
 # Creazione coppie
 # ========================
-def build_pairs(minutiae: List[Minutia]) -> List[Tuple[Tuple[int,int], float, float]]:
+def build_pairs(minutiae: List[Minutia]) -> List[Tuple[Minutia, Minutia, float, float]]:
+    """
+    Genera tutte le coppie compatibili di minutiae con distanza e differenza di orientamento.
+    """
     pairs = []
-    for (i1, m1), (i2, m2) in combinations(enumerate(minutiae), 2):
-        if m1['type'] != m2['type']:
+    for m1, m2 in combinations(minutiae, 2):
+        if m1["type"] != m2["type"]:
             continue
-        d = euclidean_distance((m1['x'], m1['y']), (m2['x'], m2['y']))
-        a = angle_between((m1['x'], m1['y']), (m2['x'], m2['y']))
-        pairs.append(((i1, i2), d, a))
-    logger.debug(f"Generate {len(pairs)} valid pairs.")
+        dist = euclidean_distance(m1, m2)
+        angle_diff = orientation_difference(m1, m2)
+        pairs.append((m1, m2, dist, angle_diff))
     return pairs
 
 # ========================
 # Matching coppie
 # ========================
-def match_pairs(pairs1, pairs2, dist_thresh=25.0, angle_thresh=0.5) -> int:
+def match_pairs(
+    pairs1: List[Tuple[Minutia, Minutia, float, float]],
+    pairs2: List[Tuple[Minutia, Minutia, float, float]],
+    dist_thresh: float = 25.0,
+    angle_thresh: float = 0.5
+) -> int:
     matched = 0
-    for (_, d1, a1) in pairs1:
-        for (_, d2, a2) in pairs2:
+    for _, _, d1, a1 in pairs1:
+        for _, _, d2, a2 in pairs2:
             if abs(d1 - d2) <= dist_thresh and abs(a1 - a2) <= angle_thresh:
                 matched += 1
                 break
-    logger.debug(f"Matched {matched} pairs (thresholds: dist={dist_thresh}, angle={angle_thresh})")
     return matched
 
 # ========================
 # Matching due immagini
 # ========================
-def match_two_images(image_id_a: int, image_id_b: int) -> float:
-    logger.info(f"Inizio matching: immagine {image_id_a} vs {image_id_b}")
+def match_two_images(
+    image_id_a: int,
+    image_id_b: int,
+    dist_thresh: float = 25.0,
+    angle_thresh: float = 0.5
+) -> float:
+    """Confronta due immagini tramite i loro ID nel DB."""
+    start_time = time.perf_counter()
+
     minutiae1 = load_minutiae_from_db(image_id_a)
     minutiae2 = load_minutiae_from_db(image_id_b)
 
     if len(minutiae1) < 2 or len(minutiae2) < 2:
-        logger.warning(f"Immagini {image_id_a} o {image_id_b} con minutiae insufficienti "
-                       f"({len(minutiae1)}, {len(minutiae2)}).")
         return 0.0
-
-    logger.debug(f"Immagine {image_id_a}: {len(minutiae1)} minutiae | "
-                 f"Immagine {image_id_b}: {len(minutiae2)} minutiae")
 
     pairs1 = build_pairs(minutiae1)
     pairs2 = build_pairs(minutiae2)
-    matched_pairs = match_pairs(pairs1, pairs2)
+
+    if not pairs1 or not pairs2:
+        return 0.0
+
+    matched_pairs = match_pairs(pairs1, pairs2, dist_thresh, angle_thresh)
     total_pairs = max(len(pairs1), len(pairs2))
     score = matched_pairs / total_pairs if total_pairs > 0 else 0.0
 
-    logger.info(f"Completato matching {image_id_a} vs {image_id_b} → score={score:.4f} "
-                f"(matched {matched_pairs}/{total_pairs})")
+    elapsed = time.perf_counter() - start_time
+    # logger.debug(f"{image_id_a} vs {image_id_b} | score={score:.4f} | tempo={elapsed*1000:.1f}ms")
     return score
 
 # ========================
 # Batch matching
 # ========================
-def batch_match(image_ids: List[int], method: str = "pair_matching") -> Dict[Tuple[int,int], float]:
+def batch_match(
+    image_filenames: List[str],
+    method: str = "pair_matching",
+    dist_thresh: float = 25.0,
+    angle_thresh: float = 0.5
+) -> Dict[Tuple[str, str], float]:
     """
-    Esegue matching tra tutte le coppie di immagini specificate.
-    Salva i risultati in DB.
+    Esegue il matching batch tra tutte le immagini elencate (per filename).
+    Restituisce un dizionario: {(filename_a, filename_b): score}
     """
     results = {}
-    total = len(image_ids)
-    logger.info(f"Avvio batch matching su {total} immagini ({total*(total-1)//2} confronti previsti)")
+    total_pairs = len(image_filenames) * (len(image_filenames) - 1) // 2
+    logger.info(f"Avvio batch matching ({total_pairs} confronti)")
 
-    for i, a_id in enumerate(image_ids):
-        for b_id in image_ids[i+1:]:
-            try:
-                score = match_two_images(a_id, b_id)
-                results[(a_id, b_id)] = score
-                save_matching_result(a_id, b_id, score, method)
-            except Exception as e:
-                logger.error(f"Errore durante il matching {a_id} vs {b_id}: {e}")
+    start = time.perf_counter()
+
+    # Creazione lista di tutte le coppie
+    pairs = [
+        (file_a, file_b)
+        for i, file_a in enumerate(image_filenames)
+        for file_b in image_filenames[i + 1:]
+    ]
+
+    # Barra di avanzamento tqdm
+    for file_a, file_b in tqdm(pairs, desc="Matching immagini", unit="coppia"):
+        try:
+            id_a = get_image_id_by_filename(file_a)
+            id_b = get_image_id_by_filename(file_b)
+
+            if id_a is None or id_b is None:
+                logger.warning(f"Immagine non trovata nel DB: {file_a} o {file_b}")
                 continue
 
-    logger.info(f"Batch matching completato con successo ({len(results)} confronti salvati)")
+            score = match_two_images(id_a, id_b, dist_thresh, angle_thresh)
+            results[(file_a, file_b)] = score
+
+            # Salva risultato nel DB
+            save_matching_result(id_a, id_b, score, method)
+
+        except Exception as e:
+            logger.error(f"Errore matching {file_a} vs {file_b}: {e}")
+
+    elapsed = time.perf_counter() - start
+    if results:
+        logger.info(f"Batch completato in {elapsed:.2f}s ({elapsed/len(results):.3f}s per confronto medio).")
+    else:
+        logger.warning("Nessun confronto completato! Controlla le immagini nel DB.")
+
     return results

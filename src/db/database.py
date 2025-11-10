@@ -206,3 +206,29 @@ def load_minutiae_from_db(image_id: int, min_quality: float = 0.2) -> List[Minut
     cur.close()
     conn.close()
     return data
+
+def get_all_image_filenames() -> list[str]:
+    """Restituisce tutti i filename presenti in tabella images."""
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("SELECT filename FROM images ORDER BY id ASC;")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [r["filename"] for r in rows]
+
+
+def load_minutiae_by_filename(filename: str, min_quality: float = 0.2) -> List[Dict[str, float]]:
+    """Carica le minutiae in base al filename (non all'ID numerico)."""
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("""
+        SELECT m.x, m.y, m.type, m.orientation, m.quality, m.coherence, m.cn, m.deg
+        FROM minutiae m
+        JOIN images i ON m.image_id = i.id
+        WHERE i.filename = %s AND m.quality >= %s
+    """, (filename, min_quality))
+    data = cur.fetchall()
+    cur.close()
+    conn.close()
+    return data
