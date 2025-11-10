@@ -52,3 +52,5 @@ dependencies:
       - uvicorn>=0.29.0,<1.0
       - pillow-avif-plugin==1.4.1
       - psycopg2-binary
+      - hdbscan
+      - umap-learn

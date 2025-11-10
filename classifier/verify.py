@@ -1,7 +1,7 @@
 import pandas as pd
 from pathlib import Path
 
-CSV_PATH = Path("results/logs/labels.csv")
+CSV_PATH = Path("classifier/save_models/id_level_clusters.csv")
 
 def check_id_consistency(csv_path):
     if not csv_path.exists():

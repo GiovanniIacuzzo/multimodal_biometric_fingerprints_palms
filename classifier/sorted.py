@@ -2,8 +2,8 @@ import os
 import shutil
 import pandas as pd
 
-csv_path = "./results/logs/labels.csv"
-base_output = "./results/img/dataset_sorted"
+csv_path = "classifier/save_models/id_level_clusters.csv"
+base_output = "results/img/dataset_sorted"
 
 # Carica il CSV
 df = pd.read_csv(csv_path)
