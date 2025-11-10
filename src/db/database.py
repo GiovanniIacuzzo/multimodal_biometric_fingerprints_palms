@@ -1,6 +1,6 @@
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from config.config import DB_CONFIG
+from config.config_fingerprint import DB_CONFIG
 import json
 import logging
 from typing import List, Dict

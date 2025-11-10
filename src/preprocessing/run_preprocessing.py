@@ -5,7 +5,7 @@ import time
 import traceback
 import numpy as np
 from tqdm import tqdm
-from config import config
+from config import config_fingerprint
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from src.preprocessing.fingerprint_preprocess import preprocess_fingerprint
 import logging
@@ -60,8 +60,8 @@ def save_debug_images(results: dict, output_dir: str, base_name: str):
 # MAIN PIPELINE
 # ====================================================
 def run_preprocessing(
-    input_dir: str = config.DATASET_DIR,
-    output_dir: str = config.PROCESSED_DIR,
+    input_dir: str = config_fingerprint.DATASET_DIR,
+    output_dir: str = config_fingerprint.PROCESSED_DIR,
     debug: bool = True,
     small_subset: bool = False,
     max_workers: int = 4  # numero di thread paralleli
@@ -151,8 +151,8 @@ def run_preprocessing(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pipeline di preprocessing impronte")
-    parser.add_argument("--input", type=str, default=config.DATASET_DIR, help="Directory immagini grezze")
-    parser.add_argument("--output", type=str, default=config.PROCESSED_DIR, help="Directory output")
+    parser.add_argument("--input", type=str, default=config_fingerprint.DATASET_DIR, help="Directory immagini grezze")
+    parser.add_argument("--output", type=str, default=config_fingerprint.PROCESSED_DIR, help="Directory output")
     parser.add_argument("--no-debug", action="store_true", help="Non salvare immagini di debug")
     parser.add_argument("--small", action="store_true", help="Usa subset di immagini per test rapido")
     args = parser.parse_args()

@@ -9,7 +9,7 @@ from classifier.models.backbone import CNNBackbone
 from classifier.utils.utils import save_model, load_model
 from classifier.utils.extract_embeddings import extract_embeddings
 from classifier.utils.cluster_embeddings import cluster_kmeans, cluster_hdbscan, visualize_tsne, visualize_umap
-from classifier.config import CONFIG
+from config.config_classifier import CONFIG
 
 def main():
     # ============================================================

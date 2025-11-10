@@ -2,7 +2,7 @@ import os
 import re
 import cv2
 import pandas as pd
-from config import config
+from config import config_fingerprint
 
 FILENAME_PATTERN = re.compile(r"(\d+)_(\d+)_(\d+)\.jpg$", re.IGNORECASE)
 
@@ -70,8 +70,8 @@ def save_catalog(records, output_csv):
 def main():
     print("Scansione del dataset PolyU HRF DBII...")
 
-    dataset_root = config.DATASET_DIR
-    output_csv = os.path.join(config.METADATA_DIR, "catalog.csv")
+    dataset_root = config_fingerprint.DATASET_DIR
+    output_csv = os.path.join(config_fingerprint.METADATA_DIR, "catalog.csv")
 
     records = scan_dataset(dataset_root)
     if not records:

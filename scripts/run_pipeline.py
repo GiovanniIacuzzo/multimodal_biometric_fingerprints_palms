@@ -8,7 +8,7 @@ faulthandler.enable()
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from config import config
+from config import config_fingerprint
 from src.catalog.prepare_catalog import main as prepare_catalog
 from src.preprocessing.run_preprocessing import run_preprocessing
 from src.features.extract_features import main as extract_minutiae
@@ -22,7 +22,7 @@ from src.evaluation.evaluate_performance import evaluate_results
 # ======================================
 def run_pipeline():
     # Crea directory necessarie
-    for path in [config.DATA_DIR, config.PROCESSED_DIR, config.FEATURES_DIR, config.METADATA_DIR]:
+    for path in [config_fingerprint.DATA_DIR, config_fingerprint.PROCESSED_DIR, config_fingerprint.FEATURES_DIR, config_fingerprint.METADATA_DIR]:
         os.makedirs(path, exist_ok=True)
 
     try:
@@ -39,8 +39,8 @@ def run_pipeline():
         print("\n[2/5] Preprocessing immagini...")
         start_pre = time.time()
         run_preprocessing(
-            input_dir=config.DATASET_DIR,
-            output_dir=config.PROCESSED_DIR,
+            input_dir=config_fingerprint.DATASET_DIR,
+            output_dir=config_fingerprint.PROCESSED_DIR,
             debug=True,
             small_subset=False
         )
@@ -61,7 +61,7 @@ def run_pipeline():
         """ for pair, score in match_results.items():
             print(f"{pair[0]} vs {pair[1]} -> Similarità: {score:.2f}") """
         
-        results_path = os.path.join(config.METADATA_DIR, "match_results.json")
+        results_path = os.path.join(config_fingerprint.METADATA_DIR, "match_results.json")
 
         json_results = {f"{str(k[0])}_vs_{str(k[1])}": v for k, v in match_results.items()}
 
@@ -72,7 +72,7 @@ def run_pipeline():
         print("\n[5/5] Valutazione performance...")
 
         # Valutazione finale
-        metrics = evaluate_results(results_path, output_path=os.path.join(config.METADATA_DIR, "performance_metrics.json"), plot_dir=config.METADATA_DIR)
+        metrics = evaluate_results(results_path, output_path=os.path.join(config_fingerprint.METADATA_DIR, "performance_metrics.json"), plot_dir=config_fingerprint.METADATA_DIR)
 
         print("\nPipeline completata con successo!")
 

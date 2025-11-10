@@ -10,7 +10,7 @@ from classifier.models.ssl_model import SSLModel
 from classifier.utils.train_ssl import train_ssl
 from classifier.utils.extract_embeddings import extract_embeddings
 from classifier.utils.cluster_embeddings import cluster_kmeans, cluster_hdbscan, visualize_tsne, visualize_umap
-from classifier.config import CONFIG
+from config.config_classifier import CONFIG
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "mps")

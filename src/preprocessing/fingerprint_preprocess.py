@@ -5,7 +5,7 @@ import cv2
 from src.preprocessing.orientation import compute_orientation_map, visualize_orientation
 from skimage.filters import threshold_sauvola, threshold_otsu, threshold_local
 from skimage.morphology import remove_small_objects, remove_small_holes, reconstruction, skeletonize
-from config import config
+from config import config_fingerprint
 
 # ================================================
 # NORMALIZATION + CLAHE
@@ -31,8 +31,8 @@ def normalize_image(img: np.ndarray) -> np.ndarray:
     # CLAHE richiede uint8
     img_u8 = (f * 255).astype(np.uint8)
     clahe = cv2.createCLAHE(
-        clipLimit=getattr(config, "CLAHE_CLIP_LIMIT", 2.0),
-        tileGridSize=(getattr(config, "CLAHE_TILE_SIZE", 8), getattr(config, "CLAHE_TILE_SIZE", 8))
+        clipLimit=getattr(config_fingerprint, "CLAHE_CLIP_LIMIT", 2.0),
+        tileGridSize=(getattr(config_fingerprint, "CLAHE_TILE_SIZE", 8), getattr(config_fingerprint, "CLAHE_TILE_SIZE", 8))
     )
     out = clahe.apply(img_u8)
     return out
@@ -44,11 +44,11 @@ def denoise_image(img: np.ndarray) -> np.ndarray:
     """Riduzione rumore con filtro bilaterale + Gaussiano."""
     b = cv2.bilateralFilter(
         img,
-        d=getattr(config, "BILATERAL_D", 5),
-        sigmaColor=getattr(config, "BILATERAL_SIGMA_COLOR", 75),
-        sigmaSpace=getattr(config, "BILATERAL_SIGMA_SPACE", 75)
+        d=getattr(config_fingerprint, "BILATERAL_D", 5),
+        sigmaColor=getattr(config_fingerprint, "BILATERAL_SIGMA_COLOR", 75),
+        sigmaSpace=getattr(config_fingerprint, "BILATERAL_SIGMA_SPACE", 75)
     )
-    return cv2.GaussianBlur(b, (3, 3), getattr(config, "GAUSSIAN_SIGMA", 0.5))
+    return cv2.GaussianBlur(b, (3, 3), getattr(config_fingerprint, "GAUSSIAN_SIGMA", 0.5))
 
 # ================================================
 # BINARIZATION
@@ -62,16 +62,16 @@ def binarize(img: np.ndarray) -> np.ndarray:
 
     # 1) Sauvola (map)
     try:
-        sauv = threshold_sauvola(img_f, window_size=getattr(config, "SAUVOLA_WIN", 25), k=getattr(config, "SAUVOLA_K", 0.2))
+        sauv = threshold_sauvola(img_f, window_size=getattr(config_fingerprint, "SAUVOLA_WIN", 25), k=getattr(config_fingerprint, "SAUVOLA_K", 0.2))
         binary_sauv = img_f < sauv
     except Exception:
         # fallback: threshold locale di skimage (più veloce in alcune config)
-        sauv = threshold_local(img_f, block_size=getattr(config, "SAUVOLA_WIN", 25))
+        sauv = threshold_local(img_f, block_size=getattr(config_fingerprint, "SAUVOLA_WIN", 25))
         binary_sauv = img_f < sauv
 
     # 2) Patch-wise Otsu ma su downsample/stride per velocizzare
     h, w = img_f.shape
-    patch = getattr(config, "LOCAL_PATCH", 64)
+    patch = getattr(config_fingerprint, "LOCAL_PATCH", 64)
     binary = binary_sauv.copy()
 
     # Se l'immagine è piccola, usa Otsu globale
@@ -108,8 +108,8 @@ def binarize(img: np.ndarray) -> np.ndarray:
     marker = cv2.erode(binary.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)), iterations=1).astype(bool)
     mask = binary.astype(bool)
     recon = reconstruction(marker.astype(bool), mask.astype(bool), method='dilation')
-    recon = remove_small_objects(recon.astype(bool), min_size=getattr(config, "MIN_OBJ_SIZE", 64))
-    recon = remove_small_holes(recon.astype(bool), area_threshold=getattr(config, "MAX_HOLE_SIZE", 64))
+    recon = remove_small_objects(recon.astype(bool), min_size=getattr(config_fingerprint, "MIN_OBJ_SIZE", 64))
+    recon = remove_small_holes(recon.astype(bool), area_threshold=getattr(config_fingerprint, "MAX_HOLE_SIZE", 64))
 
     return (recon > 0).astype(np.uint8) * 255
 
@@ -129,9 +129,9 @@ def segment_fingerprint(img: np.ndarray, debug_dir: Optional[str] = None) -> Tup
         gray = img.copy()
 
     h, w = gray.shape
-    clahe = cv2.createCLAHE(clipLimit=getattr(config, "CLAHE_CLIP_LIMIT", 2.0),
-                            tileGridSize=(getattr(config, "CLAHE_TILE_SIZE", 8),
-                                          getattr(config, "CLAHE_TILE_SIZE", 8)))
+    clahe = cv2.createCLAHE(clipLimit=getattr(config_fingerprint, "CLAHE_CLIP_LIMIT", 2.0),
+                            tileGridSize=(getattr(config_fingerprint, "CLAHE_TILE_SIZE", 8),
+                                          getattr(config_fingerprint, "CLAHE_TILE_SIZE", 8)))
     stab = clahe.apply(gray)
     blur = cv2.GaussianBlur(stab, (5, 5), 0)
 
@@ -148,7 +148,7 @@ def segment_fingerprint(img: np.ndarray, debug_dir: Optional[str] = None) -> Tup
         mask = cv2.bitwise_not(mask)
 
     # Morfologia per regioni compatte
-    k = getattr(config, "SEG_KERNEL_SIZE", 15)
+    k = getattr(config_fingerprint, "SEG_KERNEL_SIZE", 15)
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
@@ -158,7 +158,7 @@ def segment_fingerprint(img: np.ndarray, debug_dir: Optional[str] = None) -> Tup
     if not contours:
         return gray, np.ones_like(gray, dtype=np.uint8) * 255
 
-    contours = [c for c in contours if cv2.contourArea(c) >= getattr(config, "MIN_SEGMENT_AREA", 500)]
+    contours = [c for c in contours if cv2.contourArea(c) >= getattr(config_fingerprint, "MIN_SEGMENT_AREA", 500)]
     if not contours:
         return gray, np.ones_like(gray, dtype=np.uint8) * 255
 
@@ -169,7 +169,7 @@ def segment_fingerprint(img: np.ndarray, debug_dir: Optional[str] = None) -> Tup
 
     # Crop con margine
     x, y, w_box, h_box = cv2.boundingRect(hull)
-    margin = getattr(config, "SEG_CROP_MARGIN", 10)
+    margin = getattr(config_fingerprint, "SEG_CROP_MARGIN", 10)
     x0, y0 = max(0, x - margin), max(0, y - margin)
     x1, y1 = min(gray.shape[1], x + w_box + margin), min(gray.shape[0], y + h_box + margin)
 
@@ -193,8 +193,8 @@ def segment_fingerprint(img: np.ndarray, debug_dir: Optional[str] = None) -> Tup
 def thinning_and_cleaning(binary_img: np.ndarray) -> np.ndarray:
     """Scheletizza la binaria e rimuove piccoli oggetti (usa booleani)."""
     mask = (binary_img > 0).astype(bool)
-    mask = remove_small_objects(mask, min_size=getattr(config, "MIN_OBJ_SIZE", 64))
-    mask = remove_small_holes(mask, area_threshold=getattr(config, "MAX_HOLE_SIZE", 64))
+    mask = remove_small_objects(mask, min_size=getattr(config_fingerprint, "MIN_OBJ_SIZE", 64))
+    mask = remove_small_holes(mask, area_threshold=getattr(config_fingerprint, "MAX_HOLE_SIZE", 64))
     skeleton = skeletonize(mask)  # expects boolean
     return (skeleton > 0).astype(np.uint8) * 255
 
