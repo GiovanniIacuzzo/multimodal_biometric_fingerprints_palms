@@ -37,3 +37,18 @@ CONFIG = {
     "save_dir": SAVE_DIR,
     "figures_dir": FIGURES_DIR
 }
+
+CONFIG_SORTED = {
+    # === Input files ===
+    "csv_path": "classifier/save_models/id_level_clusters.csv",       # CSV con filename, path, global_class, cluster_in_class
+    "dataset_root": "dataset/DBII/",                                  # Directory sorgente immagini
+    "embeddings_path": "classifier/save_models/embeddings.pth",       # Opzionale, per metriche embedding
+
+    # === Output ===
+    "output_dir": "dataset/sorted_dataset",            # Dove creare le cartelle per cluster
+    "copy_mode": True,                                  # True = copia, False = sposta
+
+    # === Metriche ===
+    "compute_metrics": True,                           # Se False, salta silhouette / davies / calinski
+    "max_missing_display": 10                          # Quanti file mancanti mostrare nel report
+}
