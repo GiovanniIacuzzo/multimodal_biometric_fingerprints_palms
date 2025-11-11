@@ -58,7 +58,7 @@ input → Normalizzazione → Segmentazione → Binarizzazione → Thinning → 
 
 ---
 
-## Come eseguire la pipeline
+## 4. Come eseguire la pipeline
 
 Per eseguire correttamente la pipeline, segui i passaggi descritti di seguito:
 
