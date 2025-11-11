@@ -1,54 +1,101 @@
 import os
+from types import SimpleNamespace
 
 # ============================================================
-# DIRECTORY E SALVATAGGIO
+# PATH PRINCIPALI
 # ============================================================
-DATASET_PATH = "dataset/DBII"
-SAVE_DIR = "classifier/save_models"
-FIGURES_DIR = "classifier/figures"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))      # directory corrente /config
+ROOT_DIR = os.path.abspath(os.path.join(BASE_DIR, "../"))  # progetto principale
+
+DATASET_PATH = os.path.join(ROOT_DIR, "dataset", "DBII")
+SAVE_DIR = os.path.join(ROOT_DIR, "classifier", "save_models")
+FIGURES_DIR = os.path.join(ROOT_DIR, "classifier", "figures")
+SORTED_DIR = os.path.join(ROOT_DIR, "dataset", "sorted_dataset")
+
+# Crea automaticamente le directory se non esistono
+for d in [SAVE_DIR, FIGURES_DIR, SORTED_DIR]:
+    os.makedirs(d, exist_ok=True)
 
 # ============================================================
-# SSL / CONTRASTIVE LEARNING
+# CONFIGURAZIONE PRINCIPALE DEL CLASSIFICATORE SSL
 # ============================================================
-CONFIG = {
-    # Dataset
-    "dataset_path": DATASET_PATH,
-    "batch_size": 64,
-    
-    # Backbone
-    "backbone": "resnet18",          # resnet18, resnet50, efficientnet_b0, ecc.
-    "projection_dim": 128,           # Dimensione dello spazio embedding
-    
-    # Training SSL
-    "epochs": 1,
-    "lr": 1e-3,
-    "temperature": 0.5,              # Parametro per NT-Xent loss
-    
-    # Clustering
-    "n_clusters": 5,
-    "min_cluster_size": 5,
-    
-    # Fine-tuning supervisionato
-    "num_classes": 5,               # Se si hanno label reali / pseudo-label
-    "finetune_epochs": 10,
-    "train_split": 0.8,
-    
-    # Altri
-    "save_dir": SAVE_DIR,
-    "figures_dir": FIGURES_DIR
-}
+CONFIG = SimpleNamespace(
+    # === Dataset ===
+    dataset_path=os.path.join(ROOT_DIR, "dataset", "DBII"),
+    batch_size=64,
+    num_workers=4,
+    seed=42,
 
+    # === Modello ===
+    backbone="resnet18",
+    embedding_dim=512,
+    proj_hidden_dim=512,
+    proj_output_dim=128,
+    proj_num_layers=2,
+    freeze_backbone=False,
+
+    # === Training SSL ===
+    epochs=1,
+    lr=1e-3,
+    temperature=0.5,
+    optimizer="adam",
+    weight_decay=1e-4,
+    gradient_clip=1.0,
+    amp=True,
+    save_every=10,
+    warmup_epochs=5,
+
+    # === Clustering ===
+    n_clusters=5,
+    min_cluster_size=5,
+    cluster_metric="euclidean",
+
+    # === Fine-tuning supervisionato (opzionale) ===
+    num_classes=5,
+    finetune_epochs=10,
+    train_split=0.8,
+
+    # === Logging e salvataggi ===
+    save_dir=os.path.join(ROOT_DIR, "classifier", "save_models"),
+    figures_dir=os.path.join(ROOT_DIR, "classifier", "figures"),
+    log_file=os.path.join(ROOT_DIR, "classifier", "save_models", "train.log"),
+
+    # === Visualizzazione ===
+    visualize_tsne=True,
+    visualize_umap=True
+)
+
+
+# ============================================================
+# CONFIGURAZIONE PER ORDINAMENTO E ANALISI CLUSTER
+# ============================================================
 CONFIG_SORTED = {
-    # === Input files ===
-    "csv_path": "classifier/save_models/id_level_clusters.csv",       # CSV con filename, path, global_class, cluster_in_class
-    "dataset_root": "dataset/DBII/",                                  # Directory sorgente immagini
-    "embeddings_path": "classifier/save_models/embeddings.pth",       # Opzionale, per metriche embedding
+    # === Input ===
+    "csv_path": os.path.join(SAVE_DIR, "id_level_clusters.csv"),
+    "dataset_root": DATASET_PATH,
+    "embeddings_path": os.path.join(SAVE_DIR, "embeddings.pth"),
 
     # === Output ===
-    "output_dir": "dataset/sorted_dataset",            # Dove creare le cartelle per cluster
-    "copy_mode": True,                                  # True = copia, False = sposta
+    "output_dir": SORTED_DIR,
+    "copy_mode": True,                        # True = copia file, False = sposta
+    "overwrite_existing": False,
 
     # === Metriche ===
-    "compute_metrics": True,                           # Se False, salta silhouette / davies / calinski
-    "max_missing_display": 10                          # Quanti file mancanti mostrare nel report
+    "compute_metrics": True,                  # silhouette, davies-bouldin, calinski-harabasz
+    "max_missing_display": 10,
+
+    # === Visualizzazione ===
+    "save_cluster_figures": True,
+    "figure_format": "png"
 }
+
+# ============================================================
+# STAMPA RIEPILOGO CONFIGURAZIONE
+# ============================================================
+if __name__ == "__main__":
+    print("=== CONFIGURAZIONE SSL ===")
+    for k, v in CONFIG.items():
+        print(f"{k:25s}: {v}")
+    print("\n=== CONFIGURAZIONE SORTED ===")
+    for k, v in CONFIG_SORTED.items():
+        print(f"{k:25s}: {v}")

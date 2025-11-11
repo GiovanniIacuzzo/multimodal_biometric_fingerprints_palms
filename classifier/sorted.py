@@ -6,13 +6,6 @@ from collections import Counter, defaultdict
 import numpy as np
 from config.config_classifier import CONFIG_SORTED
 
-try:
-    from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
-    SKLEARN_AVAILABLE = True
-except Exception:
-    SKLEARN_AVAILABLE = False
-
-
 # ======================
 # UTILITY
 # ======================

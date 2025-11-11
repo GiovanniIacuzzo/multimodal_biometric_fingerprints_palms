@@ -4,19 +4,40 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # ------------------------------------------------
-# Salvataggio e caricamento modello
+# Salvataggio e caricamento modello / checkpoint
 # ------------------------------------------------
-def save_model(model, path: str):
-    """Salva lo state_dict del modello."""
-    torch.save(model.state_dict(), path)
-    print(f"Model saved to {path}")
+def save_model(obj, path: str):
+    """
+    Salva un modello o un checkpoint.
+    - Se obj è un modello nn.Module, salva state_dict.
+    - Se obj è un dict (checkpoint), salva direttamente il dict.
+    """
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if isinstance(obj, dict):
+        torch.save(obj, path)
+        print(f"Checkpoint saved to {path}")
+    elif hasattr(obj, "state_dict"):
+        torch.save(obj.state_dict(), path)
+        print(f"Model state_dict saved to {path}")
+    else:
+        raise ValueError("save_model: oggetto non supportato. Passa nn.Module o dict.")
 
 def load_model(model, path: str, device='cpu'):
-    """Carica lo state_dict su un modello già istanziato."""
-    model.load_state_dict(torch.load(path, map_location=device))
+    """
+    Carica uno state_dict su un modello già istanziato.
+    """
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"{path} non trovato.")
+    state = torch.load(path, map_location=device)
+    # Se è checkpoint dict
+    if isinstance(state, dict) and "model_state" in state:
+        model.load_state_dict(state["model_state"])
+        print(f"Checkpoint loaded from {path}, epoch={state.get('epoch', 'N/A')}")
+    else:
+        model.load_state_dict(state)
+        print(f"Model state_dict loaded from {path}")
     model.to(device)
     model.eval()
-    print(f"Model loaded from {path}")
     return model
 
 # ------------------------------------------------
@@ -45,6 +66,7 @@ def plot_embeddings(embeddings, labels=None, title="Embeddings", save_path=None)
     plt.xlabel("t-SNE 1")
     plt.ylabel("t-SNE 2")
     if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
         plt.savefig(save_path, bbox_inches='tight', dpi=150)
         print(f"Plot saved to {save_path}")
     plt.show()
