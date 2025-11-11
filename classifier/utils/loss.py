@@ -3,53 +3,29 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class NTXentLoss(nn.Module):
-    """
-    Normalized Temperature-scaled Cross Entropy Loss (SimCLR).
-    Funziona su batch di embedding e coppie positive.
-    """
-    def __init__(self, batch_size, temperature=0.5, device='cuda'):
-        super(NTXentLoss, self).__init__()
-        self.batch_size = batch_size
+    def __init__(self, temperature=0.5, tau_plus=0.1, eps=1e-8):
+        super().__init__()
         self.temperature = temperature
-        self.device = device
-        self.criterion = nn.CrossEntropyLoss(reduction="sum")
-        self.mask = self._get_correlated_mask().to(device)
-
-    def _get_correlated_mask(self):
-        """
-        Crea una matrice [2*B, 2*B] che maschera le coppie positive.
-        """
-        N = 2 * self.batch_size
-        mask = torch.ones((N, N), dtype=bool)
-        mask = mask.fill_diagonal_(0)  # esclude se stessa
-        for i in range(self.batch_size):
-            mask[i, i + self.batch_size] = 0
-            mask[i + self.batch_size, i] = 0
-        return mask
+        self.tau_plus = tau_plus
+        self.eps = eps
 
     def forward(self, z_i, z_j):
-        """
-        z_i, z_j: embedding di shape [B, D] (dopo projection head)
-        Ritorna la loss scalare NT-Xent
-        """
-        # 1. Normalizza embedding
+        B = z_i.size(0)
         z_i = F.normalize(z_i, dim=1)
         z_j = F.normalize(z_j, dim=1)
+        representations = torch.cat([z_i, z_j], dim=0)  # [2B, D]
 
-        # 2. Concatenazione (2B, D)
-        representations = torch.cat([z_i, z_j], dim=0)
+        sim = torch.matmul(representations, representations.T) / self.temperature
+        sim = sim - sim.max(dim=1, keepdim=True)[0]
+        mask = torch.eye(2*B, dtype=torch.bool, device=z_i.device)
+        sim.masked_fill_(mask, -9e15)
 
-        # 3. Matrice di similarità (cosine similarity)
-        sim_matrix = torch.matmul(representations, representations.T) / self.temperature
-
-        # 4. Exclude positive pairs from denominator using mask
-        sim_matrix_exp = torch.exp(sim_matrix) * self.mask
-
-        # 5. Positive similarity (diagonal opposta)
         positives = torch.exp(torch.sum(z_i * z_j, dim=-1) / self.temperature)
         positives = torch.cat([positives, positives], dim=0)
 
-        # 6. Loss
-        loss = -torch.log(positives / sim_matrix_exp.sum(dim=1))
-        loss = loss.mean()
-        return loss
+        neg_sum = torch.exp(sim).sum(dim=1)
+        Ng = (-self.tau_plus * B * positives + neg_sum) / (1 - self.tau_plus)
+        Ng = torch.clamp(Ng, min=B * torch.exp(torch.tensor(-1/self.temperature)))
+
+        loss = -torch.log(positives / (positives + Ng + self.eps))
+        return loss.mean()

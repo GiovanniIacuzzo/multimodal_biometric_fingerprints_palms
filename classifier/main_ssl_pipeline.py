@@ -143,7 +143,7 @@ def main():
     print(f"✔ Metriche di clustering salvate in {metrics_path}")
 
     # ------------------------------------------------------
-    # 5. Visualizzazione (facoltativa)
+    # 5. Visualizzazione
     # ------------------------------------------------------
     if CONFIG.visualize_tsne:
         console_step("t-SNE Visualization")
@@ -195,7 +195,6 @@ def main():
                 writer.writerow([fname, os.path.join(CONFIG.dataset_path, fname), fid, int(cluster)])
     print(f"{Fore.GREEN}✔ Risultati finali salvati in:{Style.RESET_ALL} {csv_path}")
     print(f"\n{Fore.CYAN}✨ Pipeline SSL completata con successo! ✨{Style.RESET_ALL}")
-
 
 # ==========================================================
 # ENTRYPOINT
