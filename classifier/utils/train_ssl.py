@@ -10,13 +10,14 @@ import numpy as np
 from classifier.dataset2.dataset import FingerprintDataset
 from classifier.models.ssl_model import SSLModel
 from classifier.utils.loss import NTXentLoss
-from classifier.utils.utils import save_model, load_model
 
 
 def default_device():
     if torch.cuda.is_available():
         return torch.device("cuda")
     elif torch.backends.mps.is_available():
+        # Ottimizza MPS per performance e memoria
+        torch.mps.set_performance_mode(True)
         return torch.device("mps")
     return torch.device("cpu")
 
@@ -31,7 +32,7 @@ def set_seed(seed: int = 42):
 
 
 class CosineWarmupScheduler:
-    """Cosine LR with warmup."""
+    """Cosine LR con warmup."""
     def __init__(self, optimizer, warmup_epochs, max_epochs, base_lr):
         self.optimizer = optimizer
         self.warmup_epochs = warmup_epochs
@@ -59,8 +60,8 @@ def train_ssl(
     temperature=0.5,
     save_dir="save_models",
     pretrained_backbone=True,
-    batch_size=64,
-    num_workers=4,
+    batch_size=16,  # ridotto per MPS
+    num_workers=2,
     gradient_clip=1.0,
     amp=True,
     seed=42,
@@ -68,10 +69,12 @@ def train_ssl(
     save_every=10,
     warmup_epochs=5,
     early_stop_patience=15,
+    use_multiscale=True,
 ):
     """
-    SSL training loop compatibile con CUDA / MPS / CPU.
+    SSL training loop ottimizzato per MPS.
     """
+    os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
     device = device or default_device()
     set_seed(seed)
     os.makedirs(save_dir, exist_ok=True)
@@ -80,21 +83,21 @@ def train_ssl(
         if not data_dir:
             raise ValueError("Either dataloader or data_dir must be provided.")
         dataset = FingerprintDataset(data_dir)
-        dataloader = DataLoader(
-            dataset, batch_size=batch_size, shuffle=True, drop_last=True,
-            num_workers=num_workers, pin_memory=True
-        )
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True,
+                                drop_last=True, num_workers=num_workers, pin_memory=True)
 
-    model = model or SSLModel(backbone_name="resnet18", pretrained=pretrained_backbone)
+    model = model or SSLModel(backbone_name="resnet18", pretrained=pretrained_backbone, use_multiscale=use_multiscale)
     model = model.to(device)
 
     criterion = NTXentLoss(batch_size=batch_size, temperature=temperature, device=str(device))
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     scheduler = CosineWarmupScheduler(optimizer, warmup_epochs, epochs, lr)
 
-    # Mixed precision solo su CUDA
-    use_amp = amp and device.type == "cuda"
-    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+    # Solo AMP se device supporta
+    if device.type in ["cuda"]:
+        scaler = torch.amp.GradScaler()
+    else:
+        scaler = None  # MPS/CPU non supportano AMP nativamente
 
     best_loss, patience_counter = float("inf"), 0
     start_epoch = 0
@@ -108,8 +111,8 @@ def train_ssl(
             x_i, x_j = x_i.to(device), x_j.to(device)
             optimizer.zero_grad(set_to_none=True)
 
-            if use_amp:
-                with torch.cuda.amp.autocast(enabled=True):
+            if scaler:
+                with torch.amp.autocast(enabled=amp):
                     z_i, z_j = model(x_i), model(x_j)
                     loss = criterion(z_i, z_j)
                 scaler.scale(loss).backward()
@@ -119,6 +122,7 @@ def train_ssl(
                 scaler.step(optimizer)
                 scaler.update()
             else:
+                # fallback CPU/MPS senza AMP
                 z_i, z_j = model(x_i), model(x_j)
                 loss = criterion(z_i, z_j)
                 loss.backward()
@@ -132,26 +136,22 @@ def train_ssl(
         lr_now = scheduler.step(epoch)
         print(f"[{epoch+1}/{epochs}] loss={avg_loss:.4f} lr={lr_now:.2e} time={time.time()-t0:.1f}s")
 
-        # Early stopping & salvataggio best model
+        # salva best model
         if avg_loss < best_loss:
             best_loss = avg_loss
             patience_counter = 0
-            torch.save(
-                {"epoch": epoch, "model_state": model.state_dict(), "best_loss": best_loss},
-                os.path.join(save_dir, "ssl_best.pth")
-            )
+            torch.save({"epoch": epoch, "model_state": model.state_dict(), "best_loss": best_loss},
+                       os.path.join(save_dir, "ssl_best.pth"))
         else:
             patience_counter += 1
             if patience_counter >= early_stop_patience:
                 print(f"[STOP] Early stopping at epoch {epoch+1}")
                 break
 
-        # Salvataggio checkpoint intermedio
+        # salva checkpoint periodico
         if (epoch + 1) % save_every == 0:
-            torch.save(
-                {"epoch": epoch, "model_state": model.state_dict()},
-                os.path.join(save_dir, f"ssl_epoch{epoch+1}.pth")
-            )
+            torch.save({"epoch": epoch, "model_state": model.state_dict()},
+                       os.path.join(save_dir, f"ssl_epoch{epoch+1}.pth"))
 
     print(f"[DONE] Training completed. Best loss: {best_loss:.4f}")
     return model

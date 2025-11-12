@@ -22,17 +22,17 @@ for d in [SAVE_DIR, FIGURES_DIR, SORTED_DIR]:
 CONFIG = SimpleNamespace(
     # === Dataset ===
     dataset_path=os.path.join(ROOT_DIR, "dataset", "DBII"),
-    batch_size=64,
-    num_workers=4,
+    batch_size=16,
+    num_workers=2,
     seed=42,
 
     # === Modello ===
     backbone="resnet18",
     embedding_dim=512,
     proj_hidden_dim=512,
-    proj_output_dim=128,
+    proj_output_dim=256,
     proj_num_layers=2,
-    freeze_backbone=False,
+    freeze_backbone=True,
 
     # === Training SSL ===
     epochs=1,
@@ -46,8 +46,8 @@ CONFIG = SimpleNamespace(
     warmup_epochs=5,
 
     # === Clustering ===
-    n_clusters=5,
-    min_cluster_size=5,
+    n_clusters=8,
+    min_cluster_size=8,
     cluster_metric="euclidean",
 
     # === Fine-tuning supervisionato (opzionale) ===
