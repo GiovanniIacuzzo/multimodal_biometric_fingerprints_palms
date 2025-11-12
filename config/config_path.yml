@@ -1,6 +1,6 @@
 base_dir: "./"
 data_dir: "./data"
-dataset_dir: "./dataset/DBII"
+dataset_dir: "./dataset/sorted_dataset"
 processed_dir: "./data/processed"
 features_dir: "./data/features"
 metadata_dir: "./data/metadata"

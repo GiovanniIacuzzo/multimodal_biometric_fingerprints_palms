@@ -59,6 +59,7 @@ def save_debug_images(results: dict, output_dir: str, base_name: str):
 # ====================================================
 # MAIN PIPELINE
 # ====================================================
+
 def run_preprocessing(
     input_dir: str = config_fingerprint.DATASET_DIR,
     output_dir: str = config_fingerprint.PROCESSED_DIR,
@@ -67,9 +68,16 @@ def run_preprocessing(
     max_workers: int = 4  # numero di thread paralleli
 ):
     """Applica il preprocessing completo su un dataset di impronte digitali."""
-    # Filtra immagini valide
-    image_files = sorted([f for f in os.listdir(input_dir)
-                          if f.lower().endswith(('.jpg', '.png', '.jpeg'))])
+
+    # ====================================================
+    # RICERCA RICORSIVA DI TUTTE LE IMMAGINI
+    # ====================================================
+    image_files = []
+    for root, _, files in os.walk(input_dir):
+        for f in files:
+            if f.lower().endswith(('.jpg', '.png', '.jpeg')):
+                full_path = os.path.join(root, f)
+                image_files.append(full_path)
 
     if not image_files:
         raise RuntimeError(f"Nessuna immagine trovata in {input_dir}")
@@ -77,20 +85,22 @@ def run_preprocessing(
     if small_subset:
         image_files = image_files[:10]
         logging.info(f"[DEBUG MODE] Uso solo {len(image_files)} immagini per test rapido.")
-        logging.info("Le immagini sono: " + ", ".join(image_files))
 
-    logging.info(f"Trovate {len(image_files)} immagini in '{input_dir}'")
+    logging.info(f"Trovate {len(image_files)} immagini (incluse sottocartelle) in '{input_dir}'")
     logging.info(f"Output directory: {output_dir}")
 
-    # Prepara sottocartelle
+    # Prepara cartelle di base
     enhanced_dir = os.path.join(output_dir, "enhanced")
     debug_dir_base = os.path.join(output_dir, "debug") if debug else None
     os.makedirs(enhanced_dir, exist_ok=True)
     if debug:
         os.makedirs(debug_dir_base, exist_ok=True)
 
-    def process_single_image(file_name: str):
-        img_path = os.path.join(input_dir, file_name)
+    # ====================================================
+    # FUNZIONE DI PROCESSING DI UNA SINGOLA IMMAGINE
+    # ====================================================
+    def process_single_image(img_path: str):
+        file_name = os.path.basename(img_path)
         img = load_image(img_path)
         if img is None:
             return None, file_name
@@ -102,11 +112,18 @@ def run_preprocessing(
             duration = time.time() - start_time
 
             base_name = os.path.splitext(file_name)[0]
-            out_path = os.path.join(enhanced_dir, f"{base_name}_enhanced.jpg")
+            # Mantiene la struttura del cluster
+            rel_dir = os.path.relpath(os.path.dirname(img_path), input_dir)
+
+            # Directory di destinazione per enhanced e debug
+            enhanced_subdir = os.path.join(enhanced_dir, rel_dir)
+            os.makedirs(enhanced_subdir, exist_ok=True)
+            out_path = os.path.join(enhanced_subdir, f"{base_name}_enhanced.jpg")
             cv2.imwrite(out_path, enhanced)
 
             if debug:
-                save_debug_images(results, os.path.join(debug_dir_base, base_name), base_name)
+                debug_subdir = os.path.join(debug_dir_base, rel_dir, base_name)
+                save_debug_images(results, debug_subdir, base_name)
 
             # Recupero o creazione subject_id
             subject_id = None
@@ -120,7 +137,7 @@ def run_preprocessing(
                 filename=f"{base_name}.jpg",
                 path_original=img_path,
                 path_enhanced=out_path,
-                path_skeleton=os.path.join(debug_dir_base, base_name),
+                path_skeleton=os.path.join(debug_dir_base, rel_dir, base_name),
                 orientation_mean=float(np.mean(results["orientation_map"])) if "orientation_map" in results else None,
                 preprocessing_time=duration
             )
@@ -131,10 +148,9 @@ def run_preprocessing(
             traceback.print_exc()
             return None, file_name
 
-    # =======================================
-    # Esecuzione parallela
-    # =======================================
-    results_summary = []
+    # ====================================================
+    # ESECUZIONE PARALLELA
+    # ====================================================
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {executor.submit(process_single_image, f): f for f in image_files}
         for future in tqdm(as_completed(futures), total=len(futures), desc="Preprocessing immagini", ncols=100):

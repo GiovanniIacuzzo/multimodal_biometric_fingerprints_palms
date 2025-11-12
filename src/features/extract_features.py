@@ -21,7 +21,7 @@ logging.basicConfig(
 )
 
 # ============================================================
-# THINNING E ESTRAZIONE MINUTIAE
+# FUNZIONI DI SUPPORTO
 # ============================================================
 def thin_skeleton(img: np.ndarray) -> np.ndarray:
     img_u8 = (img > 0).astype(np.uint8) * 255 if img.dtype != np.uint8 else img.copy()
@@ -29,7 +29,6 @@ def thin_skeleton(img: np.ndarray) -> np.ndarray:
         thin = cv2.ximgproc.thinning(img_u8)
         return (thin > 0).astype(np.uint8)
     except Exception:
-        # Fallback morfologico semplice
         sk = img_u8.copy()
         prev = np.zeros_like(sk)
         for _ in range(100):
@@ -40,6 +39,7 @@ def thin_skeleton(img: np.ndarray) -> np.ndarray:
                 break
             prev = sk.copy()
         return (sk > 0).astype(np.uint8)
+
 
 def extract_minutiae_from_skeleton(skel: np.ndarray) -> List[Dict]:
     sk_gray = cv2.cvtColor(skel, cv2.COLOR_BGR2GRAY) if skel.ndim == 3 else skel.copy()
@@ -53,7 +53,6 @@ def extract_minutiae_from_skeleton(skel: np.ndarray) -> List[Dict]:
 
     h, w = sk_thin.shape
     minutiae: List[Dict] = []
-
     ys, xs = np.nonzero(sk_thin)
     for y, x in zip(ys, xs):
         if y <= 0 or y >= h - 1 or x <= 0 or x >= w - 1:
@@ -71,8 +70,9 @@ def extract_minutiae_from_skeleton(skel: np.ndarray) -> List[Dict]:
             minutiae.append({"x": int(x), "y": int(y), "type": "bifurcation"})
     return minutiae
 
+
 # ============================================================
-# ELABORAZIONE SINGOLO CAMPIONE
+# ELABORAZIONE SINGOLO SAMPLE
 # ============================================================
 def process_sample(debug_dir: str, output_dir: str, params: Optional[Dict] = None) -> None:
     sample_name = os.path.basename(debug_dir.rstrip("/\\"))
@@ -85,7 +85,6 @@ def process_sample(debug_dir: str, output_dir: str, params: Optional[Dict] = Non
 
     skel = cv2.imread(skel_path, cv2.IMREAD_GRAYSCALE)
     gray = cv2.imread(gray_path, cv2.IMREAD_GRAYSCALE) if os.path.exists(gray_path) else skel
-
     if skel is None or gray is None:
         logging.error(f"Errore caricamento immagini per '{sample_name}'.")
         return
@@ -129,8 +128,9 @@ def process_sample(debug_dir: str, output_dir: str, params: Optional[Dict] = Non
     with open(json_out, "w") as f:
         json.dump(refined, f, indent=2)
 
+
 # ============================================================
-# ELABORAZIONE IN BATCH PARALLELA
+# MAIN – ELABORAZIONE DI TUTTI I CLUSTER
 # ============================================================
 def main(input_base: Optional[str] = None, output_base: Optional[str] = None, max_workers: int = None):
     input_base = input_base or os.path.join("data", "processed", "debug")
@@ -140,33 +140,35 @@ def main(input_base: Optional[str] = None, output_base: Optional[str] = None, ma
         raise FileNotFoundError(f"Cartella non trovata: {input_base}")
     os.makedirs(output_base, exist_ok=True)
 
-    sample_dirs = [
-        os.path.join(input_base, d)
-        for d in os.listdir(input_base)
-        if os.path.isdir(os.path.join(input_base, d))
-    ]
+    # CERCA TUTTI I SAMPLE RICORSIVAMENTE
+    sample_dirs = []
+    for root, dirs, files in os.walk(input_base):
+        for d in dirs:
+            path = os.path.join(root, d)
+            # Riconosciamo una "cartella di sample" se contiene skeleton o segmented
+            if any(fname.endswith("_skeleton.jpg") for fname in os.listdir(path)):
+                sample_dirs.append(path)
+
     if not sample_dirs:
-        logging.warning("Nessuna sottocartella trovata da elaborare.")
+        logging.warning("Nessuna cartella contenente impronte trovata.")
         return
 
-    print(f"Trovate {len(sample_dirs)} impronte da elaborare.\n")
+    logging.info(f"Trovate {len(sample_dirs)} impronte da elaborare in cluster multipli.\n")
 
-    # Esecuzione parallela
+    # Esecuzione parallela mantenendo struttura cluster
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            executor.submit(
-                process_sample,
-                debug_dir,
-                os.path.join(output_base, os.path.basename(debug_dir.rstrip('/\\')))
-            ): debug_dir
-            for debug_dir in sample_dirs
-        }
+        futures = {}
+        for debug_dir in sample_dirs:
+            # Mantieni struttura cluster per output
+            rel_path = os.path.relpath(debug_dir, input_base)
+            out_dir = os.path.join(output_base, rel_path)
+            futures[executor.submit(process_sample, debug_dir, out_dir)] = debug_dir
 
         for future in tqdm(as_completed(futures), total=len(futures), desc="Elaborazione impronte", unit="impronta"):
             debug_dir = futures[future]
             try:
                 future.result()
             except Exception as e:
-                logging.error(f"Errore durante l'elaborazione di '{os.path.basename(debug_dir)}': {e}")
+                logging.error(f"Errore durante l'elaborazione di '{debug_dir}': {e}")
 
-    print("\nElaborazione batch completata.")
+    logging.info("\nElaborazione batch completata.")

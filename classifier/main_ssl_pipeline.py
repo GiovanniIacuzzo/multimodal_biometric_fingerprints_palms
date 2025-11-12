@@ -15,7 +15,7 @@ from classifier.models.ssl_model import SSLModel
 from classifier.utils.train_ssl import train_ssl
 from classifier.utils.extract_embeddings import extract_embeddings
 from classifier.utils.cluster_embeddings import (
-    cluster_kmeans, cluster_hdbscan, visualize_tsne, visualize_umap
+    cluster_kmeans, cluster_hdbscan, visualize_embeddings
 )
 from config.config_classifier import CONFIG
 
@@ -56,7 +56,7 @@ def safe_json(obj):
 # MAIN PIPELINE
 # ==========================================================
 def main():
-    device = torch.device("cuda" if torch.cuda.is_available() else "mps")
+    device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
     os.makedirs(CONFIG.figures_dir, exist_ok=True)
 
     console_step("Inizializzazione")
@@ -95,7 +95,7 @@ def main():
 
     if os.path.exists(ssl_model_path):
         checkpoint = torch.load(ssl_model_path, map_location=device)
-        model.load_state_dict(checkpoint.get("model_state", checkpoint))
+        model.load_state_dict(checkpoint.get("model_state", checkpoint), strict=False)
         print(f"{Fore.GREEN}✔ Modello trovato e caricato da:{Style.RESET_ALL} {ssl_model_path}")
     else:
         print(f"{Fore.YELLOW}⚙ Addestramento modello SSL...{Style.RESET_ALL}")
@@ -147,12 +147,21 @@ def main():
     # ------------------------------------------------------
     if CONFIG.visualize_tsne:
         console_step("t-SNE Visualization")
-        visualize_tsne(embeddings, labels_kmeans, os.path.join(CONFIG.figures_dir, "tsne_kmeans.png"))
-        visualize_tsne(embeddings, labels_hdbscan, os.path.join(CONFIG.figures_dir, "tsne_hdbscan.png"))
+        visualize_embeddings(embeddings, labels=labels_kmeans,
+                     method="tsne",
+                     save_path=os.path.join(CONFIG.figures_dir, "tsne_kmeans.png"))
+        visualize_embeddings(embeddings, labels=labels_hdbscan,
+                     method="tsne",
+                     save_path=os.path.join(CONFIG.figures_dir, "tsne_hdbscan.png"))
     if CONFIG.visualize_umap:
         console_step("UMAP Visualization")
-        visualize_umap(embeddings, labels_kmeans, os.path.join(CONFIG.figures_dir, "umap_kmeans.png"))
-        visualize_umap(embeddings, labels_hdbscan, os.path.join(CONFIG.figures_dir, "umap_hdbscan.png"))
+        visualize_embeddings(embeddings, labels=labels_kmeans,
+                     method="umap",
+                     save_path=os.path.join(CONFIG.figures_dir, "umap_kmeans.png"))
+        visualize_embeddings(embeddings, labels=labels_hdbscan,
+                     method="umap",
+                     save_path=os.path.join(CONFIG.figures_dir, "umap_hdbscan.png"))
+
 
     # ------------------------------------------------------
     # 6. Aggregazione per ID

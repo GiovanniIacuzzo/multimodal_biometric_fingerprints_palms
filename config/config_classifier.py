@@ -41,7 +41,7 @@ CONFIG = SimpleNamespace(
     optimizer="adam",
     weight_decay=1e-4,
     gradient_clip=1.0,
-    amp=True,
+    amp=False,
     save_every=10,
     warmup_epochs=5,
 
@@ -73,7 +73,7 @@ CONFIG_SORTED = {
     # === Input ===
     "csv_path": os.path.join(SAVE_DIR, "id_level_clusters.csv"),
     "dataset_root": DATASET_PATH,
-    "embeddings_path": os.path.join(SAVE_DIR, "embeddings.pth"),
+    "embeddings_path": os.path.join(SAVE_DIR, "classifier/save_models/embeddings.pth"),
 
     # === Output ===
     "output_dir": SORTED_DIR,

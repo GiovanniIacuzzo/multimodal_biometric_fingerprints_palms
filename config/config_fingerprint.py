@@ -39,7 +39,7 @@ def _get_path(key: str, default: str) -> str:
 
 # Percorsi principali
 DATA_DIR       = _get_path("data_dir", "./data")
-DATASET_DIR    = _get_path("dataset_dir", "./dataset/DBII")
+DATASET_DIR    = _get_path("dataset_dir", "./dataset/sorted_dataset")
 PROCESSED_DIR  = _get_path("processed_dir", "./data/processed")
 FEATURES_DIR   = _get_path("features_dir", "./data/features")
 METADATA_DIR   = _get_path("metadata_dir", "./data/metadata")

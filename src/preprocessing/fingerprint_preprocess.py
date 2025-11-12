@@ -1,264 +1,192 @@
 import os
-from typing import Optional, Dict, Tuple
-import numpy as np
 import cv2
-from src.preprocessing.orientation import compute_orientation_map, visualize_orientation
-from skimage.filters import threshold_sauvola, threshold_otsu, threshold_local
+import numpy as np
+from typing import Optional, Dict, Tuple
+from skimage.filters import threshold_otsu
 from skimage.morphology import remove_small_objects, remove_small_holes, reconstruction, skeletonize
+from scipy.ndimage import gaussian_filter, convolve, sobel
+from src.preprocessing.orientation import compute_orientation_map, visualize_orientation
 from config import config_fingerprint
 
 # ================================================
 # NORMALIZATION + CLAHE
 # ================================================
 def normalize_image(img: np.ndarray) -> np.ndarray:
-    """
-    Normalizza immagine e applica CLAHE in modo robusto.
-    Accetta input float [0,1] o uint8.
-    """
-    # Convert to float in [0,1]
+    """Normalizza immagine e applica CLAHE in modo robusto."""
     if img.dtype == np.uint8:
         f = img.astype(np.float32) / 255.0
     else:
-        f = img.astype(np.float32)
-        # se range non [0,1], normalizziamo
-        if f.max() > 1.0 or f.min() < 0.0:
-            f = (f - f.min()) / (f.max() - f.min() + 1e-12)
+        f = (img - img.min()) / (img.max() - img.min() + 1e-8)
 
-    # Stretch contrast (robusto)
     f = (f - np.percentile(f, 1)) / (np.percentile(f, 99) - np.percentile(f, 1) + 1e-12)
     f = np.clip(f, 0.0, 1.0)
-
-    # CLAHE richiede uint8
     img_u8 = (f * 255).astype(np.uint8)
+
     clahe = cv2.createCLAHE(
-        clipLimit=getattr(config_fingerprint, "CLAHE_CLIP_LIMIT", 2.0),
-        tileGridSize=(getattr(config_fingerprint, "CLAHE_TILE_SIZE", 8), getattr(config_fingerprint, "CLAHE_TILE_SIZE", 8))
+        clipLimit=2.5,
+        tileGridSize=(8, 8)
     )
-    out = clahe.apply(img_u8)
-    return out
+    return clahe.apply(img_u8)
 
 # ================================================
 # DENOISING
 # ================================================
 def denoise_image(img: np.ndarray) -> np.ndarray:
-    """Riduzione rumore con filtro bilaterale + Gaussiano."""
-    b = cv2.bilateralFilter(
-        img,
-        d=getattr(config_fingerprint, "BILATERAL_D", 5),
-        sigmaColor=getattr(config_fingerprint, "BILATERAL_SIGMA_COLOR", 75),
-        sigmaSpace=getattr(config_fingerprint, "BILATERAL_SIGMA_SPACE", 75)
-    )
-    return cv2.GaussianBlur(b, (3, 3), getattr(config_fingerprint, "GAUSSIAN_SIGMA", 0.5))
+    """Riduzione rumore bilaterale + gaussian blur per preservare creste."""
+    bilateral = cv2.bilateralFilter(img, d=7, sigmaColor=60, sigmaSpace=60)
+    return cv2.GaussianBlur(bilateral, (3, 3), 0.6)
 
 # ================================================
-# BINARIZATION
+# BINARIZATION (Sauvola + Otsu refinements)
 # ================================================
 def binarize(img: np.ndarray) -> np.ndarray:
-    """
-    Binarizza combinando Sauvola globale + local thresholding più veloce.
-    Restituisce immagine uint8 (0/255).
-    """
-    img_f = img.astype(np.uint8)
+    """Binarizzazione ibrida con Sauvola e Otsu locali."""
+    img_f = img.astype(np.float32)
+    clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+    img_eq = clahe.apply(img_f.astype(np.uint8)).astype(np.float32)
 
-    # 1) Sauvola (map)
-    try:
-        sauv = threshold_sauvola(img_f, window_size=getattr(config_fingerprint, "SAUVOLA_WIN", 25), k=getattr(config_fingerprint, "SAUVOLA_K", 0.2))
-        binary_sauv = img_f < sauv
-    except Exception:
-        # fallback: threshold locale di skimage (più veloce in alcune config)
-        sauv = threshold_local(img_f, block_size=getattr(config_fingerprint, "SAUVOLA_WIN", 25))
-        binary_sauv = img_f < sauv
+    win = 25
+    k = 0.25
+    mean = cv2.boxFilter(img_eq, -1, (win, win))
+    sqmean = cv2.boxFilter(img_eq**2, -1, (win, win))
+    std = np.sqrt(np.clip(sqmean - mean**2, 0, None))
+    std_n = std / (std.max() + 1e-6)
+    k_map = k * (1 - 0.5 * std_n)
+    sauv_map = mean * (1 - k_map * (1 - std / (mean + 1e-6)))
+    binary = img_eq < sauv_map
 
-    # 2) Patch-wise Otsu ma su downsample/stride per velocizzare
-    h, w = img_f.shape
-    patch = getattr(config_fingerprint, "LOCAL_PATCH", 64)
-    binary = binary_sauv.copy()
+    # Refinement Otsu su patch
+    patch = 48
+    h, w = img_eq.shape
+    for i in range(0, h, patch):
+        for j in range(0, w, patch):
+            sub = img_eq[i:i+patch, j:j+patch]
+            if sub.size < 10 or sub.std() < 3:
+                continue
+            try:
+                t = threshold_otsu(sub)
+                binary[i:i+patch, j:j+patch] |= (sub < t)
+            except Exception:
+                pass
 
-    # Se l'immagine è piccola, usa Otsu globale
-    if h * w <= patch * patch:
-        try:
-            o = threshold_otsu(img_f)
-            binary |= (img_f < o)
-        except Exception:
-            pass
-    else:
-        # Scorri con step = patch (non sovrapposto) per velocità
-        for i in range(0, h, patch):
-            i1 = min(i + patch, h)
-            for j in range(0, w, patch):
-                j1 = min(j + patch, w)
-                sub = img_f[i:i1, j:j1]
-                if sub.size == 0:
-                    continue
-                # se troppi pochi livelli, salta
-                if sub.std() < 2.0:
-                    # se molto uniforme usa soglia media
-                    o = sub.mean()
-                    binary[i:i1, j:j1] |= (sub < o)
-                    continue
-                try:
-                    o = threshold_otsu(sub)
-                    binary[i:i1, j:j1] |= (sub < o)
-                except Exception:
-                    # fallback: media locale
-                    o = sub.mean()
-                    binary[i:i1, j:j1] |= (sub < o)
+    cleaned = remove_small_objects(binary, min_size=80)
+    cleaned = remove_small_holes(cleaned, area_threshold=150)
 
-    # 3) Morphological reconstruction per pulire (usa booleani)
-    marker = cv2.erode(binary.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)), iterations=1).astype(bool)
-    mask = binary.astype(bool)
-    recon = reconstruction(marker.astype(bool), mask.astype(bool), method='dilation')
-    recon = remove_small_objects(recon.astype(bool), min_size=getattr(config_fingerprint, "MIN_OBJ_SIZE", 64))
-    recon = remove_small_holes(recon.astype(bool), area_threshold=getattr(config_fingerprint, "MAX_HOLE_SIZE", 64))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    opened = cv2.morphologyEx(cleaned.astype(np.uint8), cv2.MORPH_OPEN, kernel)
 
+    marker = cv2.erode(opened, kernel, iterations=1).astype(bool)
+    recon = reconstruction(marker, opened, method='dilation')
     return (recon > 0).astype(np.uint8) * 255
 
 # ================================================
 # SEGMENTATION
 # ================================================
 def segment_fingerprint(img: np.ndarray, debug_dir: Optional[str] = None) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Segmentazione robusta dell'impronta con generazione della maschera.
-    Restituisce:
-      - cropped: impronta ritagliata
-      - cropped_mask: maschera binaria (255=impronta, 0=sfondo)
-    """
-    if len(img.shape) == 3:
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    else:
-        gray = img.copy()
-
-    h, w = gray.shape
-    clahe = cv2.createCLAHE(clipLimit=getattr(config_fingerprint, "CLAHE_CLIP_LIMIT", 2.0),
-                            tileGridSize=(getattr(config_fingerprint, "CLAHE_TILE_SIZE", 8),
-                                          getattr(config_fingerprint, "CLAHE_TILE_SIZE", 8)))
+    """Segmentazione robusta impronta + maschera foreground."""
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if len(img.shape) == 3 else img
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     stab = clahe.apply(gray)
     blur = cv2.GaussianBlur(stab, (5, 5), 0)
+    _, mask = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-    # Threshold Otsu
-    try:
-        _, mask = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    except Exception:
-        _, mask = cv2.threshold(blur, int(np.mean(blur)), 255, cv2.THRESH_BINARY)
-
-    # Se foreground è chiaro -> invertiamo
-    fg_mean = np.mean(gray[mask == 255]) if np.any(mask == 255) else 0
-    bg_mean = np.mean(gray[mask == 0]) if np.any(mask == 0) else 0
-    if fg_mean > bg_mean:
+    if np.mean(gray[mask == 255]) > np.mean(gray[mask == 0]):
         mask = cv2.bitwise_not(mask)
 
-    # Morfologia per regioni compatte
-    k = getattr(config_fingerprint, "SEG_KERNEL_SIZE", 15)
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 
-    # Contorno più grande
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not contours:
-        return gray, np.ones_like(gray, dtype=np.uint8) * 255
-
-    contours = [c for c in contours if cv2.contourArea(c) >= getattr(config_fingerprint, "MIN_SEGMENT_AREA", 500)]
     if not contours:
         return gray, np.ones_like(gray, dtype=np.uint8) * 255
 
     largest = max(contours, key=cv2.contourArea)
     hull = cv2.convexHull(largest)
     mask_hull = np.zeros_like(mask)
-    cv2.drawContours(mask_hull, [hull], -1, 255, thickness=-1)
+    cv2.drawContours(mask_hull, [hull], -1, 255, -1)
 
-    # Crop con margine
     x, y, w_box, h_box = cv2.boundingRect(hull)
-    margin = getattr(config_fingerprint, "SEG_CROP_MARGIN", 10)
-    x0, y0 = max(0, x - margin), max(0, y - margin)
-    x1, y1 = min(gray.shape[1], x + w_box + margin), min(gray.shape[0], y + h_box + margin)
+    margin = 10
+    cropped = gray[max(0, y-margin):y+h_box+margin, max(0, x-margin):x+w_box+margin]
+    cropped_mask = mask_hull[max(0, y-margin):y+h_box+margin, max(0, x-margin):x+w_box+margin]
 
-    cropped = gray[y0:y1, x0:x1]
-    hull_crop = mask_hull[y0:y1, x0:x1]
-    cropped_mask = (hull_crop > 0).astype(np.uint8) * 255
-
-    # Applica maschera per pulizia bordo
     cropped = cv2.bitwise_and(cropped, cropped, mask=cropped_mask)
-
-    if debug_dir:
-        os.makedirs(debug_dir, exist_ok=True)
-        cv2.imwrite(os.path.join(debug_dir, "segment_cropped.jpg"), cropped)
-        cv2.imwrite(os.path.join(debug_dir, "segment_mask.jpg"), cropped_mask)
-
     return cropped, cropped_mask
 
 # ================================================
-# THINNING + CLEANING
+# SMOOTHING + THINNING
 # ================================================
-def thinning_and_cleaning(binary_img: np.ndarray) -> np.ndarray:
-    """Scheletizza la binaria e rimuove piccoli oggetti (usa booleani)."""
+def smooth_fingerprint_skeleton(binary_img: np.ndarray,
+                                sigma: float = 1.4,
+                                diffusion_iter: int = 3,
+                                contrast_boost: float = 1.25) -> np.ndarray:
+    """Smussamento anisotropico per scheletro pulito e continuo."""
+    img = binary_img.astype(np.float32) / 255.0
+    gx, gy = sobel(img, axis=1), sobel(img, axis=0)
+    mag = np.sqrt(gx**2 + gy**2) + 1e-6
+    nx, ny = gx / mag, gy / mag
+
+    smoothed = img.copy()
+    for _ in range(diffusion_iter):
+        dx, dy = sobel(smoothed, axis=1), sobel(smoothed, axis=0)
+        grad_proj = dx * ny - dy * nx
+        smoothed += sigma * grad_proj
+
+    smoothed = gaussian_filter(smoothed, sigma=0.6)
+    smoothed = np.clip(smoothed * contrast_boost, 0, 1)
+    return (smoothed > 0.35).astype(np.uint8) * 255
+
+def thinning_and_cleaning(binary_img: np.ndarray,
+                          orientation_img: np.ndarray,
+                          reliability_img: np.ndarray,
+                          rel_thresh: float = 0.1) -> np.ndarray:
+    """Scheletizzazione guidata da affidabilità."""
     mask = (binary_img > 0).astype(bool)
-    mask = remove_small_objects(mask, min_size=getattr(config_fingerprint, "MIN_OBJ_SIZE", 64))
-    mask = remove_small_holes(mask, area_threshold=getattr(config_fingerprint, "MAX_HOLE_SIZE", 64))
-    skeleton = skeletonize(mask)  # expects boolean
+    mask = remove_small_objects(mask, min_size=64)
+    mask = remove_small_holes(mask, area_threshold=80)
+    rel_smooth = gaussian_filter(reliability_img, sigma=2.0)
+    mask = mask & (rel_smooth > rel_thresh)
+    skeleton = skeletonize(mask)
+
+    # Rimuove terminazioni isolate
+    kernel = np.ones((3,3), np.uint8)
+    neighbor_count = convolve(skeleton.astype(np.uint8), kernel)
+    skeleton = skeleton & (neighbor_count > 1)
     return (skeleton > 0).astype(np.uint8) * 255
 
 # ================================================
-# PIPELINE
+# MAIN PIPELINE
 # ================================================
 def preprocess_fingerprint(img: np.ndarray, debug_dir: Optional[str] = None) -> Dict[str, np.ndarray]:
-    """
-    Pipeline completa per il preprocessing di un'impronta digitale.
-    Include:
-        - Normalizzazione e denoising
-        - Segmentazione e maschera foreground
-        - Binarizzazione e thinning
-        - Calcolo campo di orientamento con maschera
-        - Visualizzazione orientamento (solo area impronta)
-    """
     try:
-        # 1. Normalizzazione e rimozione rumore
         normalized = normalize_image(img)
         denoised = denoise_image(normalized)
-
-        # 2. Segmentazione con restituzione della maschera
-        segmented, mask = segment_fingerprint(denoised, debug_dir=debug_dir)
-
-        # 3. Binarizzazione e thinning (scheletro)
+        segmented, mask = segment_fingerprint(denoised, debug_dir)
         binary = binarize(segmented)
-        skeleton = thinning_and_cleaning(binary)
 
-        # 4. Calcolo campo di orientamento vincolato alla maschera
         orient_blocks, orient_img, reliability = compute_orientation_map(
-            segmented,
-            block_size=16,
-            smooth_sigma=3.0,
-            invert_if_needed=True,
-            smooth_orientation_sigma=3.0,
-            mask=mask
+            segmented, block_size=16, smooth_sigma=3.0, invert_if_needed=True,
+            smooth_orientation_sigma=3.0, mask=mask
         )
 
-        # 5. Visualizzazione del campo di orientamento
+        binary_smooth = smooth_fingerprint_skeleton(binary)
+        skeleton = thinning_and_cleaning(binary_smooth, orient_img, reliability)
+
         orientation_vis = visualize_orientation(
-            img=segmented,
-            orient_img=orient_img,
-            reliability_img=reliability,
-            block_size=16,
-            scale=7,
-            rel_thresh=0.1,
-            mask=mask
+            img=segmented, orient_img=orient_img, reliability_img=reliability,
+            block_size=16, scale=7, rel_thresh=0.1, mask=mask
         )
 
-        # 6. Salvataggio debug (se richiesto)
         if debug_dir:
-            try:
-                os.makedirs(debug_dir, exist_ok=True)
-                cv2.imwrite(os.path.join(debug_dir, "normalized.jpg"), normalized)
-                cv2.imwrite(os.path.join(debug_dir, "denoised.jpg"), denoised)
-                cv2.imwrite(os.path.join(debug_dir, "segmented.jpg"), segmented)
-                cv2.imwrite(os.path.join(debug_dir, "mask.jpg"), mask)
-                cv2.imwrite(os.path.join(debug_dir, "binary.jpg"), binary)
-                cv2.imwrite(os.path.join(debug_dir, "skeleton.jpg"), skeleton)
-                cv2.imwrite(os.path.join(debug_dir, "orientation_vis.jpg"), orientation_vis)
-            except Exception:
-                pass  # non bloccare la pipeline se il salvataggio fallisce
+            os.makedirs(debug_dir, exist_ok=True)
+            cv2.imwrite(os.path.join(debug_dir, "normalized.jpg"), normalized)
+            cv2.imwrite(os.path.join(debug_dir, "denoised.jpg"), denoised)
+            cv2.imwrite(os.path.join(debug_dir, "segmented.jpg"), segmented)
+            cv2.imwrite(os.path.join(debug_dir, "binary.jpg"), binary)
+            cv2.imwrite(os.path.join(debug_dir, "skeleton.jpg"), skeleton)
+            cv2.imwrite(os.path.join(debug_dir, "orientation_vis.jpg"), orientation_vis)
 
-        # 7. Output strutturato
         return {
             "normalized": normalized,
             "denoised": denoised,
@@ -274,3 +202,15 @@ def preprocess_fingerprint(img: np.ndarray, debug_dir: Optional[str] = None) -> 
 
     except Exception as e:
         raise RuntimeError(f"preprocess_fingerprint failed: {e}") from e
+
+# ================================================
+# TEST LOCALE
+# ================================================
+if __name__ == "__main__":
+    test_path = "135_1_3_skeleton.jpg"  # cambia se serve
+    debug_out = "debug_output"
+    img = cv2.imread(test_path, cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        raise FileNotFoundError(f"Immagine non trovata: {test_path}")
+    results = preprocess_fingerprint(img, debug_dir=debug_out)
+    print(f"Preprocessing completato. Risultati salvati in '{debug_out}'")
