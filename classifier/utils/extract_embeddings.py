@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 from classifier.dataset2.dataset import BaseDataset
 from classifier.models.ssl_model import SSLModel
 from classifier.utils.utils import load_model
+from sklearn.preprocessing import StandardScaler
 
 
 def extract_embeddings(
@@ -15,18 +16,25 @@ def extract_embeddings(
     dataset: torch.utils.data.Dataset = None,
     model: torch.nn.Module = None,
     model_path: str = None,
-    save_dir: str = "save_model_embeddings/embeddings",
+    save_dir: str = "classifier/save_model/save_model_embeddings/embeddings",
     batch_size: int = 64,
     device: str = None,
     l2_normalize: bool = True,
+    standardize: bool = False,
     num_workers: int = 4,
     overwrite: bool = False,
     amp: bool = True,
 ):
     """
     Estrae embeddings da immagini biometriche con caching, mixed precision e normalizzazione opzionale.
+    - Usa backbone oppure projection_pred se disponibile
+    - Normalizzazione L2 opzionale
+    - Standard scaling opzionale
     """
-    device = device or ("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
+
+    device = device or (
+        "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
+    )
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
 
@@ -45,7 +53,7 @@ def extract_embeddings(
 
     # Modello
     if model is None:
-        model = SSLModel(backbone_name="resnet18").to(device)
+        model = SSLModel(backbone_name="resnet50").to(device)
         if model_path:
             load_model(model, model_path, device=device)
     else:
@@ -61,7 +69,11 @@ def extract_embeddings(
                 imgs, paths = batch if isinstance(batch, (tuple, list)) else (batch, [None] * len(batch))
                 imgs = imgs.to(device, non_blocking=True)
                 with autocast():
-                    emb = model.backbone(imgs)
+                    # se model ha projection head -> use projection_pred
+                    if hasattr(model, "projection_head"):
+                        emb, _ = model(imgs, return_embedding=True)
+                    else:
+                        emb = model.backbone(imgs)
                 emb = emb.detach().cpu().numpy()
                 embeddings_list.append(emb)
                 paths_list.extend(paths)
@@ -73,9 +85,13 @@ def extract_embeddings(
         raise RuntimeError("No embeddings extracted! Check dataset or model.")
 
     embeddings = np.vstack(embeddings_list)
+
     if l2_normalize:
         norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
         embeddings /= np.clip(norms, 1e-8, None)
+
+    if standardize:
+        embeddings = StandardScaler().fit_transform(embeddings)
 
     np.savez_compressed(npz_path, embeddings=embeddings, paths=np.array(paths_list))
     print(f"[DONE] Saved embeddings: {embeddings.shape} → {npz_path}")

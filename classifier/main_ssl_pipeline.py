@@ -122,6 +122,7 @@ def main():
     console_step("Estrazione Embeddings")
     embeddings, filenames = extract_embeddings(
         data_dir=CONFIG.dataset_path,
+        save_dir=CONFIG.save_dir,
         model=model,
         device=device,
         batch_size=CONFIG.batch_size
@@ -134,13 +135,16 @@ def main():
     # 4. Clustering globale
     # ------------------------------------------------------
     console_step("Clustering Globale")
-    labels_kmeans, metrics_kmeans = cluster_kmeans(embeddings, n_clusters=CONFIG.n_clusters)
-    labels_hdbscan, metrics_hdbscan = cluster_hdbscan(embeddings, min_cluster_size=CONFIG.min_cluster_size)
 
-    metrics_path = os.path.join(CONFIG.save_dir, "clustering_metrics.json")
+    labels_kmeans, report_kmeans = cluster_kmeans(embeddings, n_clusters=CONFIG.n_clusters)
+    labels_hdbscan, report_hdbscan = cluster_hdbscan(embeddings, min_cluster_size=CONFIG.min_cluster_size)
+
+    # salva report completo
+    metrics_path = os.path.join(CONFIG.save_dir, "clustering_report_detailed.json")
     with open(metrics_path, "w") as f:
-        json.dump({"kmeans": safe_json(metrics_kmeans), "hdbscan": safe_json(metrics_hdbscan)}, f, indent=2)
-    print(f"✔ Metriche di clustering salvate in {metrics_path}")
+        json.dump({"kmeans": report_kmeans, "hdbscan": report_hdbscan}, f, indent=2)
+
+    print(f"✔ Report dettagliato salvato in {metrics_path}")
 
     # ------------------------------------------------------
     # 5. Visualizzazione
@@ -210,3 +214,89 @@ def main():
 # ==========================================================
 if __name__ == "__main__":
     main()
+
+
+"""
+ULTIMO RISULTATO UTILE:
+(multimodal_biometric) giovanni02@MacBook-Air-del-Professore multimodal_biometric_fingerprints_palms % python -m classifier.main_ssl_pipeline
+
+============================================================
+INIZIALIZZAZIONE
+============================================================
+Device in uso: mps
+
+============================================================
+CARICAMENTO DATASET
+============================================================
+→ Trovate 1480 immagini da processare.
+
+============================================================
+CARICAMENTO O TRAINING MODELLO
+============================================================
+/opt/miniconda3/envs/multimodal_biometric/lib/python3.10/site-packages/torch/nn/utils/weight_norm.py:28: UserWarning: torch.nn.utils.weight_norm is deprecated in favor of torch.nn.utils.parametrizations.weight_norm.
+  warnings.warn("torch.nn.utils.weight_norm is deprecated in favor of torch.nn.utils.parametrizations.weight_norm.")
+⚙ Addestramento modello SSL...
+Epoch 1/5: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████| 92/92 [02:22<00:00,  1.55s/b]
+[1/5] loss=2.6436 lr=2.00e-04 time=142.6s
+Epoch 2/5: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████| 92/92 [02:18<00:00,  1.50s/b]
+[2/5] loss=2.3810 lr=4.00e-04 time=138.1s
+Epoch 3/5: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████| 92/92 [02:17<00:00,  1.49s/b]
+[3/5] loss=2.3243 lr=6.00e-04 time=137.5s
+Epoch 4/5: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████| 92/92 [02:19<00:00,  1.52s/b]
+[4/5] loss=2.3003 lr=8.00e-04 time=139.6s
+Epoch 5/5: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████| 92/92 [02:28<00:00,  1.61s/b]
+[5/5] loss=2.2797 lr=1.00e-03 time=148.4s
+[DEBUG] Sample embedding norm mean: 24.5183
+[DONE] Training completed. Best loss: 2.2797
+✔ Modello salvato in: /Users/giovanni02/Desktop/UNIKORE/multimodal_biometric_fingerprints_palms/classifier/save_models/ssl_model_final.pth
+
+============================================================
+ESTRAZIONE EMBEDDINGS
+============================================================
+Extracting embeddings: 100%|███████████████████████████████████████████████████████████████████████████████████████| 93/93 [01:21<00:00,  1.14batch/s]
+[DONE] Saved embeddings: (1480, 256) → /Users/giovanni02/Desktop/UNIKORE/multimodal_biometric_fingerprints_palms/classifier/save_models/embeddings.npz
+→ Embeddings estratti: 1480 campioni di dimensione 256
+
+============================================================
+CLUSTERING GLOBALE
+============================================================
+/opt/miniconda3/envs/multimodal_biometric/lib/python3.10/site-packages/umap/umap_.py:1952: UserWarning: n_jobs value 1 overridden to 1 by setting random_state. Use no seed for parallelism.
+  warn(
+OMP: Info #276: omp_set_nested routine deprecated, please use omp_set_max_active_levels instead.
+/opt/miniconda3/envs/multimodal_biometric/lib/python3.10/site-packages/sklearn/utils/deprecation.py:132: FutureWarning: 'force_all_finite' was renamed to 'ensure_all_finite' in 1.6 and will be removed in 1.8.
+  warnings.warn(
+/opt/miniconda3/envs/multimodal_biometric/lib/python3.10/site-packages/sklearn/utils/deprecation.py:132: FutureWarning: 'force_all_finite' was renamed to 'ensure_all_finite' in 1.6 and will be removed in 1.8.
+  warnings.warn(
+✔ Report dettagliato salvato in /Users/giovanni02/Desktop/UNIKORE/multimodal_biometric_fingerprints_palms/classifier/save_models/clustering_report_detailed.json
+
+============================================================
+T-SNE VISUALIZATION
+============================================================
+
+============================================================
+UMAP VISUALIZATION
+============================================================
+/opt/miniconda3/envs/multimodal_biometric/lib/python3.10/site-packages/umap/umap_.py:1952: UserWarning: n_jobs value 1 overridden to 1 by setting random_state. Use no seed for parallelism.
+  warn(
+/opt/miniconda3/envs/multimodal_biometric/lib/python3.10/site-packages/umap/umap_.py:1952: UserWarning: n_jobs value 1 overridden to 1 by setting random_state. Use no seed for parallelism.
+  warn(
+
+============================================================
+AGGREGAZIONE EMBEDDINGS PER ID
+============================================================
+→ Raggruppati 148 ID unici (1480 immagini totali).
+
+============================================================
+CLUSTERING PER ID
+============================================================
+✔ Clustering completato: 5 cluster generati.
+
+============================================================
+SALVATAGGIO RISULTATI
+============================================================
+✔ Risultati finali salvati in: /Users/giovanni02/Desktop/UNIKORE/multimodal_biometric_fingerprints_palms/classifier/save_models/id_level_clusters.csv
+
+✨ Pipeline SSL completata con successo! ✨
+(multimodal_biometric) giovanni02@MacBook-Air-del-Professore multimodal_biometric_fingerprints_palms % 
+
+"""

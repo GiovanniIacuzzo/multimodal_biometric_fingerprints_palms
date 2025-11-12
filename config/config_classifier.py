@@ -27,7 +27,7 @@ CONFIG = SimpleNamespace(
     seed=42,
 
     # === Modello ===
-    backbone="resnet18",
+    backbone="resnet50",
     embedding_dim=512,
     proj_hidden_dim=512,
     proj_output_dim=256,
@@ -35,7 +35,7 @@ CONFIG = SimpleNamespace(
     freeze_backbone=True,
 
     # === Training SSL ===
-    epochs=1,
+    epochs=5,
     lr=1e-3,
     temperature=0.5,
     optimizer="adam",
@@ -46,12 +46,12 @@ CONFIG = SimpleNamespace(
     warmup_epochs=5,
 
     # === Clustering ===
-    n_clusters=8,
-    min_cluster_size=8,
-    cluster_metric="euclidean",
+    n_clusters=5,
+    min_cluster_size=5,
+    cluster_metric="cosine",
 
     # === Fine-tuning supervisionato (opzionale) ===
-    num_classes=5,
+    num_classes=8,
     finetune_epochs=10,
     train_split=0.8,
 
