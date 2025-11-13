@@ -6,7 +6,8 @@ from skimage.filters import threshold_otsu
 from skimage.morphology import remove_small_objects, remove_small_holes, reconstruction, skeletonize
 from scipy.ndimage import gaussian_filter, convolve, sobel
 from src.preprocessing.orientation import compute_orientation_map, visualize_orientation
-from config import config_fingerprint
+# from src.preprocessing.segmentation.inference import predict_mask
+
 
 # ================================================
 # NORMALIZATION + CLAHE
@@ -82,24 +83,39 @@ def binarize(img: np.ndarray) -> np.ndarray:
 # ================================================
 # SEGMENTATION
 # ================================================
-def segment_fingerprint(img: np.ndarray, debug_dir: Optional[str] = None) -> Tuple[np.ndarray, np.ndarray]:
-    """Segmentazione robusta impronta + maschera foreground."""
+def segment_fingerprint(img: np.ndarray,
+                        debug_dir: Optional[str] = None,
+                        save_mask_dir: Optional[str] = None,
+                        img_name: Optional[str] = None) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Segmentazione impronta digitale usando metodo deterministico classico.
+    Ritorna immagine segmentata + maschera foreground.
+    """
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if len(img.shape) == 3 else img
+
+    # --- segmentazione classica ---
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     stab = clahe.apply(gray)
     blur = cv2.GaussianBlur(stab, (5, 5), 0)
     _, mask = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
+    # inverti se necessario
     if np.mean(gray[mask == 255]) > np.mean(gray[mask == 0]):
         mask = cv2.bitwise_not(mask)
 
+    # morfologia
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 
+    # contorni e hull
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
-        return gray, np.ones_like(gray, dtype=np.uint8) * 255
+        mask_hull = np.ones_like(mask, dtype=np.uint8) * 255
+        if save_mask_dir and img_name:
+            os.makedirs(save_mask_dir, exist_ok=True)
+            cv2.imwrite(os.path.join(save_mask_dir, img_name), mask_hull)
+        return gray, mask_hull
 
     largest = max(contours, key=cv2.contourArea)
     hull = cv2.convexHull(largest)
@@ -110,9 +126,15 @@ def segment_fingerprint(img: np.ndarray, debug_dir: Optional[str] = None) -> Tup
     margin = 10
     cropped = gray[max(0, y-margin):y+h_box+margin, max(0, x-margin):x+w_box+margin]
     cropped_mask = mask_hull[max(0, y-margin):y+h_box+margin, max(0, x-margin):x+w_box+margin]
-
     cropped = cv2.bitwise_and(cropped, cropped, mask=cropped_mask)
+
+    # salva la maschera se richiesto
+    if save_mask_dir and img_name:
+        os.makedirs(save_mask_dir, exist_ok=True)
+        cv2.imwrite(os.path.join(save_mask_dir, img_name), cropped_mask)
+
     return cropped, cropped_mask
+
 
 # ================================================
 # SMOOTHING + THINNING
@@ -158,11 +180,14 @@ def thinning_and_cleaning(binary_img: np.ndarray,
 # ================================================
 # MAIN PIPELINE
 # ================================================
-def preprocess_fingerprint(img: np.ndarray, debug_dir: Optional[str] = None) -> Dict[str, np.ndarray]:
+def preprocess_fingerprint(img: np.ndarray,
+                           debug_dir: Optional[str] = None,
+                           save_mask_dir: Optional[str] = None,
+                           img_name: Optional[str] = None) -> Dict[str, np.ndarray]:
     try:
         normalized = normalize_image(img)
         denoised = denoise_image(normalized)
-        segmented, mask = segment_fingerprint(denoised, debug_dir)
+        segmented, mask = segment_fingerprint(denoised, debug_dir, save_mask_dir, img_name)
         binary = binarize(segmented)
 
         orient_blocks, orient_img, reliability = compute_orientation_map(
@@ -203,14 +228,22 @@ def preprocess_fingerprint(img: np.ndarray, debug_dir: Optional[str] = None) -> 
     except Exception as e:
         raise RuntimeError(f"preprocess_fingerprint failed: {e}") from e
 
-# ================================================
-# TEST LOCALE
-# ================================================
 if __name__ == "__main__":
-    test_path = "135_1_3_skeleton.jpg"  # cambia se serve
+    input_dir = "dataset/DBII"
+    save_mask_dir = "dataset/masks"
     debug_out = "debug_output"
-    img = cv2.imread(test_path, cv2.IMREAD_GRAYSCALE)
-    if img is None:
-        raise FileNotFoundError(f"Immagine non trovata: {test_path}")
-    results = preprocess_fingerprint(img, debug_dir=debug_out)
-    print(f"Preprocessing completato. Risultati salvati in '{debug_out}'")
+    max_images = 100
+
+    os.makedirs(save_mask_dir, exist_ok=True)
+
+    all_files = [f for f in os.listdir(input_dir) if f.lower().endswith((".jpg", ".png", ".jpeg"))]
+
+    for f in all_files[:max_images]:
+        img_path = os.path.join(input_dir, f)
+        img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            print(f"[WARN] Immagine non trovata: {img_path}")
+            continue
+        preprocess_fingerprint(img, debug_dir=debug_out, save_mask_dir=save_mask_dir, img_name=f)
+
+    print(f"Preprocessing completato. Maschere salvate in '{save_mask_dir}' per {min(max_images, len(all_files))} immagini")
