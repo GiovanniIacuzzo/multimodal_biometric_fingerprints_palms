@@ -12,17 +12,7 @@ from classifier.dataset2.preprocessing import preprocess_image
 # Augmentazioni per contrastive learning
 # ==========================================================
 class FingerprintAugmentations:
-    """
-    Augmentazioni realistiche per contrastive learning su impronte digitali.
-    Include:
-    - Rotazioni casuali lievi (+ occasionali rotazioni forti)
-    - Flip orizzontale e verticale
-    - Crop e resize
-    - Jitter di contrasto/luminosità
-    - Noise gaussiano
-    """
-
-    def __init__(self, image_size=256):
+    def __init__(self, image_size=224):
         self.image_size = image_size
 
     def __call__(self, img: np.ndarray) -> torch.Tensor:
@@ -108,15 +98,14 @@ class FingerprintDataset(Dataset):
 # Dataset base per feature extraction / clustering
 # ==========================================================
 class BaseDataset(Dataset):
-    """
-    Dataset per fase di embedding o clustering:
-    - Preprocessing coerente con quello usato nel training SSL
-    """
-
-    def __init__(self, root_dir: str, extensions: List[str] = [".jpg", ".png"]):
+    def __init__(self, root_dir: str, extensions: List[str] = [".jpg", ".png"], image_size: int = 224):
         self.root_dir = Path(root_dir)
         self.img_paths = [p for p in self.root_dir.glob("**/*") if p.suffix.lower() in extensions]
         self.img_paths = sorted(self.img_paths)
+        self.image_size = image_size
+
+        if len(self.img_paths) == 0:
+            raise RuntimeError(f"Nessuna immagine trovata in {root_dir}")
 
     def __len__(self):
         return len(self.img_paths)
@@ -125,8 +114,17 @@ class BaseDataset(Dataset):
         img_path = self.img_paths[idx]
         img = preprocess_image(img_path)
 
+        # se preprocess_image fallisce
         if img is None:
-            img = np.zeros((256, 256), dtype=np.float32)
+            img = np.zeros((self.image_size, self.image_size), dtype=np.float32)
+
+        # ridimensiona a image_size x image_size
+        if img.shape[0] != self.image_size or img.shape[1] != self.image_size:
+            img = cv2.resize(img, (self.image_size, self.image_size), interpolation=cv2.INTER_AREA)
+
+        # Normalizza [0,1] se necessario
+        if img.max() > 1.0:
+            img = img.astype(np.float32) / 255.0
 
         img_tensor = torch.from_numpy(img).unsqueeze(0).float()  # (1,H,W)
         return img_tensor, str(img_path)

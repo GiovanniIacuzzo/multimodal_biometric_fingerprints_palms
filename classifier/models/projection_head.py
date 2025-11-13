@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from torch.nn.utils import parametrizations
 
 class ProjectionHead(nn.Module):
     """
@@ -29,13 +29,13 @@ class ProjectionHead(nn.Module):
         if num_layers == 1:
             layers.append(nn.Linear(input_dim, output_dim))
         else:
-            layers.append(nn.utils.weight_norm(nn.Linear(input_dim, hidden_dim)))
+            layers.append(parametrizations.weight_norm(nn.Linear(input_dim, hidden_dim)))
             layers.append(nn.BatchNorm1d(hidden_dim))
             layers.append(nn.ReLU(inplace=True))
             layers.append(nn.Dropout(dropout))
             for _ in range(num_layers - 2):
                 layers += [
-                    nn.utils.weight_norm(nn.Linear(hidden_dim, hidden_dim)),
+                    parametrizations.weight_norm(nn.Linear(hidden_dim, hidden_dim)),
                     nn.BatchNorm1d(hidden_dim),
                     nn.ReLU(inplace=True),
                     nn.Dropout(dropout),

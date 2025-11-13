@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans, AgglomerativeClustering
 import hdbscan
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
@@ -9,7 +9,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
 from sklearn.preprocessing import normalize
-
 
 def summarize_embeddings(X):
     norms = np.linalg.norm(X, axis=1)
@@ -23,19 +22,20 @@ def summarize_embeddings(X):
         "l2_std": float(np.std(norms))
     }
 
-
 def evaluate_clustering(X, labels):
+    """Valutazione clustering usando distanza basata sul coseno"""
     mask = labels != -1
     if np.sum(mask) < 2 or len(np.unique(labels[mask])) < 2:
         return {"silhouette": np.nan, "davies": np.nan, "calinski": np.nan}
     X_masked = X[mask]
     y_masked = labels[mask]
+    
+    # silhouette_score accetta metric='cosine'
     return {
-        "silhouette": float(silhouette_score(X_masked, y_masked)),
-        "davies": float(davies_bouldin_score(X_masked, y_masked)),
-        "calinski": float(calinski_harabasz_score(X_masked, y_masked))
+        "silhouette": float(silhouette_score(X_masked, y_masked, metric='cosine')),
+        "davies": float(davies_bouldin_score(X_masked, y_masked)),  # non supporta cosine direttamente
+        "calinski": float(calinski_harabasz_score(X_masked, y_masked))  # idem
     }
-
 
 def preprocess_embeddings(X, method='pca', dim=50, random_state=42):
     """Riduzione dimensionale con PCA o UMAP"""
@@ -46,18 +46,18 @@ def preprocess_embeddings(X, method='pca', dim=50, random_state=42):
         X_proc = umap.UMAP(n_neighbors=15, min_dist=0.0, n_components=dim, random_state=random_state).fit_transform(X_proc)
     return X_proc
 
-
-def cluster_kmeans(X, n_clusters=8, normalize_input=True, dim_reduction='pca', dim=50, random_state=42):
+def cluster_kmeans(X, n_clusters=8, dim_reduction='pca', dim=50, random_state=42):
+    """KMeans basato su cosine: normalizza gli embeddings prima di KMeans"""
     X_proc = X.copy()
-    if normalize_input:
-        X_proc = normalize(X_proc, norm='l2')
+    # normalizzazione L2 per cosine similarity
+    X_proc = normalize(X_proc, norm='l2')
     X_proc = preprocess_embeddings(X_proc, method=dim_reduction, dim=dim, random_state=random_state)
-
+    
     km = KMeans(n_clusters=n_clusters, random_state=random_state, n_init='auto')
     labels = km.fit_predict(X_proc)
-
+    
     report = {
-        "algorithm": "kmeans",
+        "algorithm": "kmeans_cosine",
         "params": {"n_clusters": n_clusters, "dim_reduction": dim_reduction, "dim": dim},
         "metrics": evaluate_clustering(X_proc, labels),
         "cluster_sizes": {int(i): int(np.sum(labels == i)) for i in np.unique(labels)},
@@ -65,91 +65,42 @@ def cluster_kmeans(X, n_clusters=8, normalize_input=True, dim_reduction='pca', d
     }
     return labels, report
 
-
-def cluster_hdbscan(X, min_cluster_size=10, min_samples=None, normalize_input=False,
-                    dim_reduction='umap', dim=10, metric='euclidean'):
+def cluster_agglomerative(X, n_clusters=8, linkage='average', metric='cosine',
+                          dim_reduction='pca', dim=50, random_state=42):
+    """
+    Agglomerative Clustering basato su cosine distance.
+    """
     X_proc = X.copy()
-    if normalize_input:
-        X_proc = normalize(X_proc, norm='l2')
-    X_proc = preprocess_embeddings(X_proc, method=dim_reduction, dim=dim)
+    X_proc = normalize(X_proc, norm='l2')  # necessario per cosine similarity
+    # riduzione dimensionale
+    if dim_reduction == 'pca' and X_proc.shape[1] > dim:
+        X_proc = PCA(n_components=dim, random_state=random_state).fit_transform(X_proc)
+    elif dim_reduction == 'umap' and X_proc.shape[1] > dim:
+        X_proc = umap.UMAP(n_neighbors=15, min_dist=0.0, n_components=dim,
+                           random_state=random_state).fit_transform(X_proc)
 
-    clusterer = hdbscan.HDBSCAN(
-        min_cluster_size=min_cluster_size,
-        min_samples=min_samples or min_cluster_size,
-        metric=metric,
-        cluster_selection_epsilon=0.01,
-        cluster_selection_method='eom'
-    )
-    labels = clusterer.fit_predict(X_proc)
-    n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-    cluster_sizes = {int(i): int(np.sum(labels == i)) for i in np.unique(labels) if i != -1}
+    agg = AgglomerativeClustering(n_clusters=n_clusters, metric=metric, linkage=linkage)
+    labels = agg.fit_predict(X_proc)
 
     report = {
-        "algorithm": "hdbscan",
-        "params": {
-            "min_cluster_size": min_cluster_size,
-            "min_samples": clusterer.min_samples,
-            "metric": metric,
-            "dim_reduction": dim_reduction,
-            "dim": dim
-        },
+        "algorithm": "agglomerative",
+        "params": {"n_clusters": n_clusters, "linkage": linkage, "metric": metric,
+                   "dim_reduction": dim_reduction, "dim": dim},
         "metrics": evaluate_clustering(X_proc, labels),
-        "n_clusters": int(n_clusters),
-        "noise_points": int(np.sum(labels == -1)),
-        "cluster_sizes": cluster_sizes,
-        "embedding_summary": summarize_embeddings(X_proc),
-        "extra": {
-            "probabilities_mean": float(np.mean(clusterer.probabilities_)),
-            "outlier_score_mean": float(np.mean(clusterer.outlier_scores_)) if hasattr(clusterer, "outlier_scores_") else None
-        }
+        "cluster_sizes": {int(i): int(np.sum(labels == i)) for i in np.unique(labels)},
+        "embedding_summary": summarize_embeddings(X_proc)
     }
     return labels, report
-
-
-def auto_tune_kmeans(X, cluster_range=(2, 10), normalize_input=True, dim_reduction='pca', dim=50):
-    best_score = -1
-    best_labels = None
-    best_report = None
-    for n in range(cluster_range[0], cluster_range[1]+1):
-        labels, report = cluster_kmeans(X, n_clusters=n, normalize_input=normalize_input,
-                                        dim_reduction=dim_reduction, dim=dim)
-        score = report['metrics']['silhouette']
-        if not np.isnan(score) and score > best_score:
-            best_score = score
-            best_labels = labels
-            best_report = report
-    return best_labels, best_report
-
-
-def auto_tune_hdbscan(X, min_cluster_sizes=[5, 10, 20, 30], min_samples_list=[5, 10, 15],
-                      normalize_input=False, dim_reduction='umap', dim=10, metric='euclidean'):
-    best_score = -1
-    best_labels = None
-    best_report = None
-    for min_size in min_cluster_sizes:
-        for min_s in min_samples_list:
-            labels, report = cluster_hdbscan(
-                X, min_cluster_size=min_size, min_samples=min_s,
-                normalize_input=normalize_input, dim_reduction=dim_reduction, dim=dim, metric=metric
-            )
-            score = report['metrics']['silhouette']
-            if not np.isnan(score) and score > best_score:
-                best_score = score
-                best_labels = labels
-                best_report = report
-    return best_labels, best_report
-
 
 def _safe_palette(n):
     base = sns.color_palette("tab20", min(n, 20))
     reps = int(np.ceil(n / len(base)))
     return (base * reps)[:n]
 
-
 def visualize_embeddings(embeddings, labels=None, method='umap', save_path=None,
                          interactive=False, random_state=42):
     reducer = TSNE(n_components=2, random_state=random_state, perplexity=30) \
-        if method.lower() == 'tsne' else umap.UMAP(n_neighbors=15, min_dist=0.1, random_state=random_state)
+        if method.lower() == 'tsne' else umap.UMAP(n_neighbors=15, min_dist=0.1, random_state=None)
     try:
         emb_2d = reducer.fit_transform(embeddings)
     except Exception as e:

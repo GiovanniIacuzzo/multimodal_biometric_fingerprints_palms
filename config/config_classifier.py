@@ -1,101 +1,35 @@
 import os
+import yaml
 from types import SimpleNamespace
 
-# ============================================================
-# PATH PRINCIPALI
-# ============================================================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))      # directory corrente /config
-ROOT_DIR = os.path.abspath(os.path.join(BASE_DIR, "../"))  # progetto principale
+def load_config(yaml_path: str = "config/config_classifier.yml"):
+    with open(yaml_path, "r") as f:
+        cfg = yaml.safe_load(f)
 
-DATASET_PATH = os.path.join(ROOT_DIR, "dataset", "DBII")
-SAVE_DIR = os.path.join(ROOT_DIR, "classifier", "save_models")
-FIGURES_DIR = os.path.join(ROOT_DIR, "classifier", "figures")
-SORTED_DIR = os.path.join(ROOT_DIR, "dataset", "sorted_dataset")
+    # --- Risolve percorsi assoluti ---
+    root_dir = os.path.abspath(os.path.join(os.path.dirname(yaml_path), cfg["paths"]["root_dir"]))
+    for k, v in cfg["paths"].items():
+        if isinstance(v, str) and v.startswith("./"):
+            cfg["paths"][k] = os.path.abspath(os.path.join(root_dir, v[2:]))
 
-# Crea automaticamente le directory se non esistono
-for d in [SAVE_DIR, FIGURES_DIR, SORTED_DIR]:
-    os.makedirs(d, exist_ok=True)
+    # --- Crea automaticamente le directory principali ---
+    for d in [cfg["paths"]["save_dir"], cfg["paths"]["figures_dir"], cfg["paths"]["sorted_dir"]]:
+        os.makedirs(d, exist_ok=True)
 
-# ============================================================
-# CONFIGURAZIONE PRINCIPALE DEL CLASSIFICATORE SSL
-# ============================================================
-CONFIG = SimpleNamespace(
-    # === Dataset ===
-    dataset_path=os.path.join(ROOT_DIR, "dataset", "DBII"),
-    batch_size=16,
-    num_workers=2,
-    seed=42,
+    # --- Converti in SimpleNamespace per compatibilità ---
+    def to_namespace(d):
+        if isinstance(d, dict):
+            return SimpleNamespace(**{k: to_namespace(v) for k, v in d.items()})
+        return d
 
-    # === Modello ===
-    backbone="resnet50",
-    embedding_dim=512,
-    proj_hidden_dim=512,
-    proj_output_dim=256,
-    proj_num_layers=2,
-    freeze_backbone=True,
-
-    # === Training SSL ===
-    epochs=5,
-    lr=1e-3,
-    temperature=0.5,
-    optimizer="adam",
-    weight_decay=1e-4,
-    gradient_clip=1.0,
-    amp=False,
-    save_every=10,
-    warmup_epochs=5,
-
-    # === Clustering ===
-    n_clusters=5,
-    min_cluster_size=5,
-    cluster_metric="cosine",
-
-    # === Fine-tuning supervisionato (opzionale) ===
-    num_classes=8,
-    finetune_epochs=10,
-    train_split=0.8,
-
-    # === Logging e salvataggi ===
-    save_dir=os.path.join(ROOT_DIR, "classifier", "save_models"),
-    figures_dir=os.path.join(ROOT_DIR, "classifier", "figures"),
-    log_file=os.path.join(ROOT_DIR, "classifier", "save_models", "train.log"),
-
-    # === Visualizzazione ===
-    visualize_tsne=True,
-    visualize_umap=True
-)
-
+    return to_namespace(cfg)
 
 # ============================================================
-# CONFIGURAZIONE PER ORDINAMENTO E ANALISI CLUSTER
-# ============================================================
-CONFIG_SORTED = {
-    # === Input ===
-    "csv_path": os.path.join(SAVE_DIR, "id_level_clusters.csv"),
-    "dataset_root": DATASET_PATH,
-    "embeddings_path": os.path.join(SAVE_DIR, "classifier/save_models/embeddings.pth"),
-
-    # === Output ===
-    "output_dir": SORTED_DIR,
-    "copy_mode": True,                        # True = copia file, False = sposta
-    "overwrite_existing": False,
-
-    # === Metriche ===
-    "compute_metrics": True,                  # silhouette, davies-bouldin, calinski-harabasz
-    "max_missing_display": 10,
-
-    # === Visualizzazione ===
-    "save_cluster_figures": True,
-    "figure_format": "png"
-}
-
-# ============================================================
-# STAMPA RIEPILOGO CONFIGURAZIONE
+# TEST DI CARICAMENTO
 # ============================================================
 if __name__ == "__main__":
+    CONFIG = load_config()
     print("=== CONFIGURAZIONE SSL ===")
-    for k, v in CONFIG.items():
-        print(f"{k:25s}: {v}")
-    print("\n=== CONFIGURAZIONE SORTED ===")
-    for k, v in CONFIG_SORTED.items():
-        print(f"{k:25s}: {v}")
+    print(CONFIG.ssl.model.backbone)
+    print(CONFIG.paths.save_dir)
+    print(CONFIG.ssl.logging.log_file)

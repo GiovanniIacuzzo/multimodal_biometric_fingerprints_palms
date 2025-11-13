@@ -15,17 +15,33 @@ from classifier.models.ssl_model import SSLModel
 from classifier.utils.train_ssl import train_ssl
 from classifier.utils.extract_embeddings import extract_embeddings
 from classifier.utils.cluster_embeddings import (
-    cluster_kmeans, cluster_hdbscan, visualize_embeddings
+    cluster_kmeans, visualize_embeddings, cluster_agglomerative
 )
-from config.config_classifier import CONFIG
 
+# Carica la configurazione (root namespace)
+from config.config_classifier import load_config
+
+# --- LOAD CONFIG ---
+cfg = load_config()        # cfg: root namespace, contiene .paths e .ssl
+paths = cfg.paths          # percorsi principali
+ssl_cfg = cfg.ssl          # sezione ssl con model, training, logging, ecc.
 
 # ==========================================================
 # LOGGING SETUP
 # ==========================================================
-os.makedirs(CONFIG.save_dir, exist_ok=True)
+# Assicuriamoci che le directory esistano prima di usarle
+os.makedirs(paths.save_dir, exist_ok=True)
+os.makedirs(paths.figures_dir, exist_ok=True)
+
+# Nota: nel tuo YAML log_file è dentro ssl.logging
+log_file = getattr(ssl_cfg, "logging", None)
+if log_file is not None:
+    log_file = getattr(ssl_cfg.logging, "log_file", os.path.join(paths.save_dir, "train.log"))
+else:
+    log_file = os.path.join(paths.save_dir, "train.log")
+
 logging.basicConfig(
-    filename=CONFIG.log_file,
+    filename=log_file,
     level=logging.INFO,
     format="[%(asctime)s] [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
@@ -57,7 +73,7 @@ def safe_json(obj):
 # ==========================================================
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
-    os.makedirs(CONFIG.figures_dir, exist_ok=True)
+    os.makedirs(paths.figures_dir, exist_ok=True)
 
     console_step("Inizializzazione")
     print(f"{Fore.GREEN}Device in uso:{Style.RESET_ALL} {device}")
@@ -67,12 +83,12 @@ def main():
     # 1. Dataset SSL
     # ------------------------------------------------------
     console_step("Caricamento Dataset")
-    dataset_ssl = FingerprintDataset(CONFIG.dataset_path)
+    dataset_ssl = FingerprintDataset(paths.dataset_path)
     dataloader_ssl = DataLoader(
         dataset_ssl,
-        batch_size=CONFIG.batch_size,
+        batch_size=ssl_cfg.dataset.batch_size,
         shuffle=True,
-        num_workers=CONFIG.num_workers,
+        num_workers=ssl_cfg.dataset.num_workers,
         drop_last=True
     )
     print(f"→ Trovate {len(dataset_ssl)} immagini da processare.")
@@ -81,37 +97,39 @@ def main():
     # 2. Modello SSL
     # ------------------------------------------------------
     console_step("Caricamento o Training Modello")
-    ssl_model_path = os.path.join(CONFIG.save_dir, "ssl_model_final.pth")
+    ssl_model_path = os.path.join(paths.save_dir, "ssl_model_final.pth")
 
     model = SSLModel(
-        backbone_name=CONFIG.backbone,
+        backbone_name=ssl_cfg.model.backbone,
         pretrained=True,
-        embedding_dim=CONFIG.embedding_dim,
-        proj_hidden_dim=CONFIG.proj_hidden_dim,
-        proj_output_dim=CONFIG.proj_output_dim,
-        proj_num_layers=CONFIG.proj_num_layers,
-        freeze_backbone=CONFIG.freeze_backbone
+        embedding_dim=ssl_cfg.model.embedding_dim,
+        proj_hidden_dim=ssl_cfg.model.proj_hidden_dim,
+        proj_output_dim=ssl_cfg.model.proj_output_dim,
+        proj_num_layers=ssl_cfg.model.proj_num_layers,
+        freeze_backbone=ssl_cfg.model.freeze_backbone
     ).to(device)
 
     if os.path.exists(ssl_model_path):
         checkpoint = torch.load(ssl_model_path, map_location=device)
-        model.load_state_dict(checkpoint.get("model_state", checkpoint), strict=False)
+        # supporta checkpoint sia intero che dict con "model_state"
+        state = checkpoint.get("model_state", checkpoint) if isinstance(checkpoint, dict) else checkpoint
+        model.load_state_dict(state, strict=False)
         print(f"{Fore.GREEN}✔ Modello trovato e caricato da:{Style.RESET_ALL} {ssl_model_path}")
     else:
         print(f"{Fore.YELLOW}⚙ Addestramento modello SSL...{Style.RESET_ALL}")
         model = train_ssl(
             model=model,
             dataloader=dataloader_ssl,
-            data_dir=CONFIG.dataset_path,
+            data_dir=paths.dataset_path,
             device=device,
-            epochs=CONFIG.epochs,
-            lr=CONFIG.lr,
-            temperature=CONFIG.temperature,
-            save_dir=CONFIG.save_dir,
-            gradient_clip=getattr(CONFIG, "gradient_clip", 1.0),
-            amp=getattr(CONFIG, "amp", True),
-            save_every=getattr(CONFIG, "save_every", 5),
-            warmup_epochs=getattr(CONFIG, "warmup_epochs", 5)
+            epochs=ssl_cfg.training.epochs,
+            lr=ssl_cfg.training.lr,
+            temperature=ssl_cfg.training.temperature,
+            save_dir=paths.save_dir,
+            gradient_clip=ssl_cfg.training.gradient_clip,
+            amp=ssl_cfg.training.amp,
+            save_every=ssl_cfg.training.save_every,
+            warmup_epochs=ssl_cfg.training.warmup_epochs
         )
         torch.save(model.state_dict(), ssl_model_path)
         print(f"{Fore.GREEN}✔ Modello salvato in:{Style.RESET_ALL} {ssl_model_path}")
@@ -121,50 +139,76 @@ def main():
     # ------------------------------------------------------
     console_step("Estrazione Embeddings")
     embeddings, filenames = extract_embeddings(
-        data_dir=CONFIG.dataset_path,
-        save_dir=CONFIG.save_dir,
+        data_dir=paths.dataset_path,
+        save_dir=paths.save_dir,
         model=model,
         device=device,
-        batch_size=CONFIG.batch_size
+        batch_size=ssl_cfg.dataset.batch_size
     )
     print(f"→ Embeddings estratti: {embeddings.shape[0]} campioni di dimensione {embeddings.shape[1]}")
     torch.save({"embeddings": embeddings, "filenames": filenames},
-               os.path.join(CONFIG.save_dir, "embeddings.pth"))
+               os.path.join(paths.save_dir, "embeddings.pth"))
 
     # ------------------------------------------------------
     # 4. Clustering globale
     # ------------------------------------------------------
     console_step("Clustering Globale")
 
-    labels_kmeans, report_kmeans = cluster_kmeans(embeddings, n_clusters=CONFIG.n_clusters)
-    labels_hdbscan, report_hdbscan = cluster_hdbscan(embeddings, min_cluster_size=CONFIG.min_cluster_size)
+    # --- KMeans ---
+    labels_kmeans, report_kmeans = cluster_kmeans(
+        embeddings, 
+        n_clusters=ssl_cfg.clustering.n_clusters,
+        dim_reduction=ssl_cfg.clustering.dim_reduction,
+        dim=ssl_cfg.clustering.dim
+    )
 
-    # salva report completo
-    metrics_path = os.path.join(CONFIG.save_dir, "clustering_report_detailed.json")
+    # --- Agglomerative ---
+    labels_agg, report_agg = cluster_agglomerative(
+        embeddings,
+        n_clusters=ssl_cfg.clustering.n_clusters,
+        metric='cosine',
+        dim_reduction=ssl_cfg.clustering.dim_reduction,
+        dim=ssl_cfg.clustering.dim
+    )
+
+    # --- Salvataggio report completo ---
+    metrics_path = os.path.join(paths.save_dir, "clustering_report_detailed.json")
     with open(metrics_path, "w") as f:
-        json.dump({"kmeans": report_kmeans, "hdbscan": report_hdbscan}, f, indent=2)
+        json.dump({
+            "kmeans": report_kmeans,
+            "agglomerative": report_agg
+        }, f, indent=2)
 
     print(f"✔ Report dettagliato salvato in {metrics_path}")
 
     # ------------------------------------------------------
     # 5. Visualizzazione
     # ------------------------------------------------------
-    if CONFIG.visualize_tsne:
+    if ssl_cfg.visualization.visualize_tsne:
         console_step("t-SNE Visualization")
-        visualize_embeddings(embeddings, labels=labels_kmeans,
-                     method="tsne",
-                     save_path=os.path.join(CONFIG.figures_dir, "tsne_kmeans.png"))
-        visualize_embeddings(embeddings, labels=labels_hdbscan,
-                     method="tsne",
-                     save_path=os.path.join(CONFIG.figures_dir, "tsne_hdbscan.png"))
-    if CONFIG.visualize_umap:
+        visualize_embeddings(
+            embeddings, labels=labels_kmeans,
+            method="tsne",
+            save_path=os.path.join(paths.figures_dir, "tsne_kmeans.png")
+        )
+        visualize_embeddings(
+            embeddings, labels=labels_agg,
+            method="tsne",
+            save_path=os.path.join(paths.figures_dir, "tsne_agglomerative.png")
+        )
+
+    if ssl_cfg.visualization.visualize_umap:
         console_step("UMAP Visualization")
-        visualize_embeddings(embeddings, labels=labels_kmeans,
-                     method="umap",
-                     save_path=os.path.join(CONFIG.figures_dir, "umap_kmeans.png"))
-        visualize_embeddings(embeddings, labels=labels_hdbscan,
-                     method="umap",
-                     save_path=os.path.join(CONFIG.figures_dir, "umap_hdbscan.png"))
+        visualize_embeddings(
+            embeddings, labels=labels_kmeans,
+            method="umap",
+            save_path=os.path.join(paths.figures_dir, "umap_kmeans.png")
+        )
+        visualize_embeddings(
+            embeddings, labels=labels_agg,
+            method="umap",
+            save_path=os.path.join(paths.figures_dir, "umap_agglomerative.png")
+        )
 
 
     # ------------------------------------------------------
@@ -190,31 +234,31 @@ def main():
     # 7. Clustering a livello ID
     # ------------------------------------------------------
     console_step("Clustering per ID")
-    if len(id_list) < CONFIG.n_clusters:
-        raise ValueError(f"Non ci sono abbastanza ID ({len(id_list)}) per {CONFIG.n_clusters} cluster.")
-    id_labels, _ = cluster_kmeans(agg_embeddings, n_clusters=CONFIG.n_clusters)
-    print(f"✔ Clustering completato: {CONFIG.n_clusters} cluster generati.")
+    if len(id_list) < ssl_cfg.clustering.n_clusters:
+        raise ValueError(f"Non ci sono abbastanza ID ({len(id_list)}) per {ssl_cfg.clustering.n_clusters} cluster.")
+    id_labels, _ = cluster_kmeans(agg_embeddings, n_clusters=ssl_cfg.clustering.n_clusters)
+    print(f"✔ Clustering completato: {ssl_cfg.clustering.n_clusters} cluster generati.")
 
     # ------------------------------------------------------
     # 8. Salvataggio risultati
     # ------------------------------------------------------
     console_step("Salvataggio Risultati")
-    csv_path = os.path.join(CONFIG.save_dir, "id_level_clusters.csv")
+    csv_path = os.path.join(paths.save_dir, "id_level_clusters.csv")
     with open(csv_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["filename", "path", "global_class", "cluster_in_class"])
         for fid, cluster in zip(id_list, id_labels):
             for fname in id_to_filenames[fid]:
-                writer.writerow([fname, os.path.join(CONFIG.dataset_path, fname), fid, int(cluster)])
+                writer.writerow([fname, os.path.join(paths.dataset_path, fname), fid, int(cluster)])
     print(f"{Fore.GREEN}✔ Risultati finali salvati in:{Style.RESET_ALL} {csv_path}")
     print(f"\n{Fore.CYAN}✨ Pipeline SSL completata con successo! ✨{Style.RESET_ALL}")
+
 
 # ==========================================================
 # ENTRYPOINT
 # ==========================================================
 if __name__ == "__main__":
     main()
-
 
 """
 ULTIMO RISULTATO UTILE:

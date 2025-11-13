@@ -1,0 +1,85 @@
+# ============================================================
+# CONFIGURAZIONE PRINCIPALE DEL SISTEMA BIOMETRICO SSL
+# ============================================================
+
+paths:
+  base_dir: ./config
+  root_dir: ..
+  dataset_path: ./dataset/DBII
+  save_dir: ./classifier/save_models
+  figures_dir: ./classifier/figures
+  sorted_dir: ./dataset/sorted_dataset
+
+# ============================================================
+# CONFIGURAZIONE SSL
+# ============================================================
+
+ssl:
+  dataset:
+    batch_size: 16
+    num_workers: 2
+    seed: 42
+
+  model:
+    backbone: vit_base_patch16_224
+    embedding_dim: 512
+    proj_hidden_dim: 512
+    proj_output_dim: 256
+    proj_num_layers: 2
+    freeze_backbone: true
+
+  training:
+    epochs: 2
+    lr: 0.001
+    temperature: 0.5
+    optimizer: adam
+    weight_decay: 0.0001
+    gradient_clip: 1.0
+    amp: true
+    save_every: 10
+    warmup_epochs: 5
+
+  clustering:
+    n_clusters: 8
+    min_cluster_size: 8
+    cluster_metric: cosine
+    dim_reduction: pca
+    dim: 100
+
+  finetune:
+    num_classes: 8
+    finetune_epochs: 10
+    train_split: 0.8
+
+  logging:
+    log_file: ./classifier/save_models/train.log
+    save_dir: ./classifier/save_models
+    figures_dir: ./classifier/figures
+
+  visualization:
+    visualize_tsne: true
+    visualize_umap: true
+
+
+# ============================================================
+# CONFIGURAZIONE PER ORDINAMENTO E ANALISI CLUSTER
+# ============================================================
+
+sorted:
+  input:
+    csv_path: ./classifier/save_models/id_level_clusters.csv
+    dataset_root: ./dataset/DBII
+    embeddings_path: ./classifier/save_models/embeddings.pth
+
+  output:
+    output_dir: ./dataset/sorted_dataset
+    copy_mode: true
+    overwrite_existing: false
+
+  metrics:
+    compute_metrics: true
+    max_missing_display: 10
+
+  visualization:
+    save_cluster_figures: true
+    figure_format: png
