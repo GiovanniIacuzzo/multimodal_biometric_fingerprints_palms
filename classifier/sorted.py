@@ -4,7 +4,9 @@ import shutil
 from pathlib import Path
 from collections import Counter, defaultdict
 import numpy as np
-from config.config_classifier import CONFIG_SORTED
+from config.config_classifier import load_config
+
+CONFIG_SORTED = load_config().sorted
 
 # ======================
 # UTILITY
@@ -108,10 +110,9 @@ def compute_embedding_metrics(embeddings, filenames, clusters, out_dir):
 # MAIN
 # ======================
 def main():
-    cfg = CONFIG_SORTED
-    csv_path = Path(cfg["csv_path"])
-    dataset_root = Path(cfg["dataset_root"])
-    out_dir = Path(cfg["output_dir"])
+    csv_path = Path(CONFIG_SORTED.input.csv_path)
+    dataset_root = Path(CONFIG_SORTED.input.dataset_root)
+    out_dir = Path(CONFIG_SORTED.output.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # --- Caricamento CSV ---
@@ -119,14 +120,14 @@ def main():
         rows = list(csv.DictReader(f))
 
     clusters, missing = copy_files_to_clusters(
-        rows, dataset_root, out_dir, copy_mode=cfg.get("copy_mode", True)
+        rows, dataset_root, out_dir, copy_mode=CONFIG_SORTED.output.copy_mode
     )
 
     global_purity, per_cluster = compute_purity(clusters)
 
     emb_report = {}
-    if cfg.get("compute_metrics", True) and cfg.get("embeddings_path"):
-        embeddings, filenames = load_embeddings(cfg["embeddings_path"])
+    if CONFIG_SORTED.metrics.compute_metrics and CONFIG_SORTED.input.embeddings_path:
+        embeddings, filenames = load_embeddings(CONFIG_SORTED.input.embeddings_path)
         if embeddings is not None:
             emb_report = compute_embedding_metrics(embeddings, filenames, clusters, out_dir)
         else:
@@ -140,7 +141,7 @@ def main():
         "num_clusters": len(clusters),
         "num_files": sum(len(v) for v in clusters.values()),
         "missing_count": len(missing),
-        "missing_sample": missing[:cfg.get("max_missing_display", 10)],
+        "missing_sample": CONFIG_SORTED.metrics.max_missing_display,
         "global_purity": global_purity,
         "per_cluster": per_cluster,
         "embedding_metrics": emb_report

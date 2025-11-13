@@ -67,7 +67,7 @@ ssl:
 
 sorted:
   input:
-    csv_path: ./classifier/save_models/id_level_clusters.csv
+    csv_path: ./classifier/save_models/id_clusters.csv
     dataset_root: ./dataset/DBII
     embeddings_path: ./classifier/save_models/embeddings.pth
 
