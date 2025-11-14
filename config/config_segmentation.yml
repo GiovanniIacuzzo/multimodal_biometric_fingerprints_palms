@@ -1,44 +1,44 @@
 experiment:
-  name: "fingerprint_segmentation_unetpp_v1"
+  name: "fingerprint_segmentation"
   seed: 42
 
 dataset:
   img_dir: "dataset/DBII"
-  mask_dir: "dataset/masks"
+  mask_dir: "dataset/processed/debug/mask"
   output_dir: "dataset/outpdata/processed/segmentation"
-  image_size: [384, 384]
-  batch_size: 2        # 8 potrebbe esplodere con U-Net++, usa 6 per sicurezza
-  num_workers: 4
+  image_size: [256, 256]
+  batch_size: 8
+  num_workers: 2
   val_split: 0.2
   shuffle: true
   pin_memory: true
 
 training:
-  epochs: 2                      # U-Net++ converge più lentamente
+  epochs: 10
   device: "auto"
   max_grad_norm: 1.0
   checkpoint_dir: "data/checkpoints/segmentation"
-  checkpoint_every_n_epochs: 999  # NON vogliamo checkpoint multipli, solo best model
+  checkpoint_every_n_epochs: 999
   early_stopping:
     enabled: true
-    patience: 6                   # le curve di U-Net++ sono più lente
+    patience: 5
   save_best_only: true
 
 optimizer:
   type: "AdamW"
-  lr: 0.00015                     # leggermente più alto, U-Net++ risponde bene
-  weight_decay: 0.0005            # troppo alto penalizza i dettagli sottili
+  lr: 0.00015
+  weight_decay: 0.0005
 
 scheduler:
-  type: "ReduceLROnPlateau"       # PIÙ STABILE di OneCycleLR per segmentazione
+  type: "ReduceLROnPlateau"
   mode: "min"
   factor: 0.5
   patience: 3
   min_lr: 0.00001
 
 loss:
-  bce_weight: 0.7                 # meglio 70% BCE
-  dice_weight: 1.0                # e 100% DICE per bordi e aree sottili
+  bce_weight: 0.7
+  dice_weight: 1.0
   use_focal_tversky: true
   focal_tversky:
     alpha: 0.7
@@ -48,7 +48,6 @@ loss:
 augmentation:
   use_albumentations: true
 
-  # impronte: NON ruotare troppo, rischi di deformare la ridge structure
   horizontal_flip_p: 0.5
 
   shift_scale_rotate:
@@ -57,13 +56,10 @@ augmentation:
     scale_limit: 0.1
     rotate_limit: 5
 
-  # leggero contrasto: serve a staccare ridge/valleys
   brightness_contrast_p: 0.25
 
-  # impronte: rumore reale
   gauss_noise_p: 0.35
 
-  # elastic: simula la pressione del dito
   elastic_transform_p: 0.25
 
 logging:
@@ -73,7 +69,7 @@ logging:
 model:
   pretrained_model: null
   num_labels: 1
-  save_path: "src/preprocessing/segmentation/model/unetpp_fingerprint.pth"
+  save_path: "src/preprocessing/segmentation/model/fingerprint.pth"
 
 misc:
   resume_from_checkpoint: ""

@@ -12,8 +12,6 @@ from torch.utils.data import DataLoader, Subset
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import OneCycleLR, ReduceLROnPlateau
 from tqdm import tqdm
-
-# Optional: albumentations for strong augmentations
 try:
     import albumentations as A
     from albumentations.pytorch import ToTensorV2
@@ -23,7 +21,6 @@ except Exception:
 
 from torch.utils.tensorboard import SummaryWriter
 
-# Import your dataset + model (assumes package import works; run from project root)
 from src.preprocessing.segmentation.dataset import FingerprintDataset
 from src.preprocessing.segmentation.model import FingerprintSegmentationModel
 

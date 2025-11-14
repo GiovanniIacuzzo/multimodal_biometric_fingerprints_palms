@@ -17,7 +17,7 @@ IMG_DIR = cfg["dataset"]["img_dir"]
 OUTPUT_DIR = cfg["dataset"]["output_dir"]
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-MODEL_PATH = cfg["training"].get("best_checkpoint_path", "data/checkpoints/segmentation/best_epoch_5.pth")
+MODEL_PATH = cfg["training"].get("best_checkpoint_path", "data/checkpoints/segmentation/best_epoch_n.pth")
 IMAGE_SIZE = tuple(cfg["dataset"]["image_size"])
 
 # ----------------------------
