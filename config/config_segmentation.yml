@@ -5,9 +5,9 @@ experiment:
 dataset:
   img_dir: "dataset/DBII"
   mask_dir: "dataset/processed/debug/mask"
-  output_dir: "dataset/outpdata/processed/segmentation"
+  output_dir: "dataset/processed/segmentation"
   image_size: [256, 256]
-  batch_size: 8
+  batch_size: 4
   num_workers: 2
   val_split: 0.2
   shuffle: true
