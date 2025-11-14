@@ -40,8 +40,8 @@ ssl:
     warmup_epochs: 5
 
   clustering:
-    n_clusters: 8
-    min_cluster_size: 8
+    n_clusters: 5
+    min_cluster_size: 5
     cluster_metric: cosine
     dim_reduction: pca
     dim: 100
@@ -67,12 +67,12 @@ ssl:
 
 sorted:
   input:
-    csv_path: ./classifier/save_models/id_clusters.csv
-    dataset_root: ./dataset/DBII
-    embeddings_path: ./classifier/save_models/embeddings.pth
+    csv_path: classifier/save_models/id_clusters.csv
+    dataset_root: dataset/DBII
+    embeddings_path: classifier/save_models/embeddings.pth
 
   output:
-    output_dir: ./dataset/sorted_dataset
+    output_dir: dataset/sorted_dataset
     copy_mode: true
     overwrite_existing: false
 
@@ -82,4 +82,4 @@ sorted:
 
   visualization:
     save_cluster_figures: true
-    figure_format: png
+    figure_format: jpg

@@ -1,0 +1,50 @@
+# =====================================================
+# CONFIGURAZIONE PIPELINE BIOMETRICA
+# =====================================================
+
+paths:
+  base_dir: ""
+  dataset_dir: "./dataset"
+  processed_dir: "./dataset/processed"
+  features_dir: "./data/features"
+  metadata_dir: "./data/metadata"
+  debug_dir: "./data/features/debug"
+
+database:
+  host: localhost
+  dbname: biometria
+  user: postgres
+  password: postgres
+  port: 5432
+
+preprocessing:
+  clahe_clip_limit: 2.0
+  clahe_tile_size: 8
+  bilateral:
+    d: 5
+    sigma_color: 50.0
+    sigma_space: 7.0
+  gaussian_sigma: 0.7
+
+binarization:
+  sauv_wo_win: 25
+  sauv_k: 0.2
+  local_patch: 64
+  min_obj_size: 30
+  max_hole_size: 100
+  min_segment_area: 5000
+
+orientation:
+  quality_window: 25
+  quality_threshold: 0.25
+  coherence_threshold: 0.3
+  min_distance: 10.0
+  orientation_window: 15
+  margin: 40
+  orient_sigma: 10.0
+
+general:
+  block_size: 16
+  energy_threshold: 0.01
+  rel_threshold: 0.2
+  vis_scale: 8

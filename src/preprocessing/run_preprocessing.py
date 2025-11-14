@@ -29,32 +29,34 @@ def load_image(path: str) -> np.ndarray:
         return None
 
 def save_debug_images(results: dict, output_dir: str, base_name: str):
-    """Salva tutte le fasi intermedie del preprocessing in formato sicuro."""
-    os.makedirs(output_dir, exist_ok=True)
-
-    def safe_convert(img: np.ndarray) -> np.ndarray:
-        if img is None:
-            return None
-        if img.dtype == np.uint8:
-            return img
-        if img.dtype == bool:
-            return (img.astype(np.uint8)) * 255
-        if np.issubdtype(img.dtype, np.floating):
-            if img.max() <= 1.0:
-                img = img * 255.0
-            return np.clip(img, 0, 255).astype(np.uint8)
-        if np.issubdtype(img.dtype, np.integer):
-            return np.clip(img, 0, 255).astype(np.uint8)
-        return img.astype(np.uint8)
-
+    """
+    Salva le immagini preprocessate in sottocartelle per tipo:
+    output_dir/<tipo>/<nome_file>.jpg
+    """
     for key, img in results.items():
         if img is None:
             continue
-        filename = os.path.join(output_dir, f"{base_name}_{key}.jpg")
+
+        # sottocartella per tipo
+        subdir = os.path.join(output_dir, key)
+        os.makedirs(subdir, exist_ok=True)
+
+        # nome file
+        filename = os.path.join(subdir, f"{base_name}.jpg")
+
+        # conversione sicura
+        if img.dtype == bool:
+            img = (img.astype(np.uint8)) * 255
+        elif np.issubdtype(img.dtype, np.floating):
+            img = np.clip(img * 255.0, 0, 255).astype(np.uint8)
+        else:
+            img = np.clip(img, 0, 255).astype(np.uint8)
+
         try:
-            cv2.imwrite(filename, safe_convert(img))
+            cv2.imwrite(filename, img)
         except Exception as e:
             logging.warning(f"Fallito salvataggio di {filename}: {e}")
+
 
 # ====================================================
 # MAIN PIPELINE
@@ -122,7 +124,7 @@ def run_preprocessing(
             cv2.imwrite(out_path, enhanced)
 
             if debug:
-                debug_subdir = os.path.join(debug_dir_base, rel_dir, base_name)
+                debug_subdir = os.path.join(output_dir, "debug")
                 save_debug_images(results, debug_subdir, base_name)
 
             # Recupero o creazione subject_id

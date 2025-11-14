@@ -10,7 +10,7 @@ def check_id_consistency(csv_path):
 
     df = pd.read_csv(csv_path)
     # Assicurati che ci siano le colonne giuste
-    required_cols = {"filename", "global_class"}
+    required_cols = {"filename", "global_id"}
     if not required_cols.issubset(df.columns):
         print(f"Colonne mancanti nel CSV. Attese: {required_cols}")
         return
@@ -21,8 +21,8 @@ def check_id_consistency(csv_path):
     # Controlla la coerenza della global_class per ciascun ID
     inconsistent_ids = []
     for fid, group in df.groupby('id'):
-        if group['global_class'].nunique() > 1:
-            inconsistent_ids.append((fid, group['global_class'].unique()))
+        if group['global_id'].nunique() > 1:
+            inconsistent_ids.append((fid, group['global_id'].unique()))
 
     if inconsistent_ids:
         print(f"Trovati ID con classi globali incoerenti:")

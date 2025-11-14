@@ -32,7 +32,7 @@ def copy_files_to_clusters(rows, dataset_root: Path, out_dir: Path, copy_mode=Tr
         fname = r["filename"]
         csv_path = r.get("path", "") or ""
         file_id = r.get("global_class", "")
-        cluster = int(r.get("cluster_in_class", -1))
+        cluster = int(r.get("cluster_label", -1))
         src = safe_join_dataset(dataset_root, csv_path) if csv_path else dataset_root / fname
         if not src.exists():
             missing.append(str(src))

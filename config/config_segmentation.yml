@@ -1,0 +1,79 @@
+experiment:
+  name: "fingerprint_segmentation_unetpp_v1"
+  seed: 42
+
+dataset:
+  img_dir: "dataset/DBII"
+  mask_dir: "dataset/masks"
+  output_dir: "dataset/outpdata/processed/segmentation"
+  image_size: [384, 384]
+  batch_size: 2        # 8 potrebbe esplodere con U-Net++, usa 6 per sicurezza
+  num_workers: 4
+  val_split: 0.2
+  shuffle: true
+  pin_memory: true
+
+training:
+  epochs: 2                      # U-Net++ converge più lentamente
+  device: "auto"
+  max_grad_norm: 1.0
+  checkpoint_dir: "data/checkpoints/segmentation"
+  checkpoint_every_n_epochs: 999  # NON vogliamo checkpoint multipli, solo best model
+  early_stopping:
+    enabled: true
+    patience: 6                   # le curve di U-Net++ sono più lente
+  save_best_only: true
+
+optimizer:
+  type: "AdamW"
+  lr: 0.00015                     # leggermente più alto, U-Net++ risponde bene
+  weight_decay: 0.0005            # troppo alto penalizza i dettagli sottili
+
+scheduler:
+  type: "ReduceLROnPlateau"       # PIÙ STABILE di OneCycleLR per segmentazione
+  mode: "min"
+  factor: 0.5
+  patience: 3
+  min_lr: 0.00001
+
+loss:
+  bce_weight: 0.7                 # meglio 70% BCE
+  dice_weight: 1.0                # e 100% DICE per bordi e aree sottili
+  use_focal_tversky: true
+  focal_tversky:
+    alpha: 0.7
+    beta: 0.3
+    gamma: 0.75
+
+augmentation:
+  use_albumentations: true
+
+  # impronte: NON ruotare troppo, rischi di deformare la ridge structure
+  horizontal_flip_p: 0.5
+
+  shift_scale_rotate:
+    p: 0.6
+    shift_limit: 0.03
+    scale_limit: 0.1
+    rotate_limit: 5
+
+  # leggero contrasto: serve a staccare ridge/valleys
+  brightness_contrast_p: 0.25
+
+  # impronte: rumore reale
+  gauss_noise_p: 0.35
+
+  # elastic: simula la pressione del dito
+  elastic_transform_p: 0.25
+
+logging:
+  use_tensorboard: false
+  tb_log_dir: "data/logging/segmentation"
+
+model:
+  pretrained_model: null
+  num_labels: 1
+  save_path: "src/preprocessing/segmentation/model/unetpp_fingerprint.pth"
+
+misc:
+  resume_from_checkpoint: ""

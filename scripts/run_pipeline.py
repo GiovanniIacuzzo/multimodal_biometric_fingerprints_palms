@@ -8,7 +8,7 @@ faulthandler.enable()
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from config import config_fingerprint
+from config.config_fingerprint import get_path
 from src.catalog.prepare_catalog import main as prepare_catalog
 from src.preprocessing.run_preprocessing import run_preprocessing
 from src.features.extract_features import main as extract_minutiae
@@ -22,7 +22,10 @@ from src.evaluation.evaluate_performance import evaluate_results
 # ======================================
 def run_pipeline():
     # Crea directory necessarie
-    for path in [config_fingerprint.DATA_DIR, config_fingerprint.PROCESSED_DIR, config_fingerprint.FEATURES_DIR, config_fingerprint.METADATA_DIR]:
+    paths_to_create = ["processed_dir", "features_dir", "metadata_dir"]
+
+    for key in paths_to_create:
+        path = get_path(key, "./" + key)  # legge da YAML o usa il default
         os.makedirs(path, exist_ok=True)
 
     try:
@@ -39,20 +42,20 @@ def run_pipeline():
         print("\n[2/5] Preprocessing immagini...")
         start_pre = time.time()
         run_preprocessing(
-            input_dir=config_fingerprint.DATASET_DIR,
-            output_dir=config_fingerprint.PROCESSED_DIR,
+            input_dir=get_path("dataset_dir", "./dataset/sorted_dataset"),
+            output_dir=get_path("processed_dir", "./dataset/processed"),
             debug=True,
-            small_subset=True
+            small_subset=False
         )
         print(f"[INFO] Preprocessing completato in {time.time()-start_pre:.2f} sec")
 
-        # -------------------------------------------------
+        """ # -------------------------------------------------
         print("\n[3/5] Estrazione minutiae...")
         start_feat = time.time()
         extract_minutiae()
         print(f"[INFO] Estrazione minutiae completata in {time.time()-start_feat:.2f} sec")
 
-        """ # -------------------------------------------------
+        # -------------------------------------------------
         print("\n[4/5] Matching impronte...")
         filenames = get_all_image_filenames()
         match_results = batch_match_from_debug(debug_dir="data/processed/debug", device="mps")
