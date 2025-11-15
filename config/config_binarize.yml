@@ -1,30 +1,77 @@
-# ===========================
+# ===================================
 # CONFIGURAZIONE TRAINING BINARIZE
-# ===========================
+# ===================================
 
 paths:
-  train_dir: "dataset/processed/"
-  val_split: 0.2
-  inference_dir: dataset/processed/segmentation
+  train_dir: "dataset/processed/"     # Cartella con input / mask
+  val_split: 0.2                      # Percentuale validation
+  inference_dir: "dataset/processed/segmentation"
   inference_out_dir: "dataset/processed/binarize"
 
+  # Dove salvare checkpoint e immagini
+  ckpt_dir: "data/checkpoints/binarize"
+  vis_dir: "data/vis/binarize"
+
+
+# ===========================
+# MODEL CONFIG
+# ===========================
 model:
   in_channels: 1
   out_channels: 1
-  base_channels: 32
+  base_channels: 32        # 32 = leggero / 64 = più potente (consigliato se hai GPU)
 
+
+# ===========================
+# TRAINING CONFIG
+# ===========================
 training:
   batch_size: 8
-  epochs: 10
+  epochs: 10               # Alza pure a 40–60 per massimo quality
   lr: 0.0001
-  num_workers: 2
-  device: "mps"
+  weight_decay: 0.0001
+  num_workers: 4
+  device: "mps"            # "cpu", "cuda", "mps"
+  seed: 42
 
+  # Mixed precision (sì su CUDA, no su MPS)
+  amp: false               # MPS non supporta AMP → deve essere false
+
+  # Gradient clipping
+  max_grad_norm: 1.0
+
+  # Dice + BCE
+  dice_weight: 1.0
+  threshold: 0.5
+
+  # Checkpointing
+  save_every: 999            # salva ogni N epoch
+  save_val_visuals: true     # salva predizioni in validation
+
+  # Early stopping
+  early_stopping_patience: 5
+
+  # Scheduler (scegli uno)
+  scheduler:
+    type: "ReduceLROnPlateau"   # oppure "CosineWarmRestarts"
+    patience: 5
+    factor: 0.5
+    min_lr: 0.000001
+
+
+# ===========================
+# AUGMENTATION
+# ===========================
 augmentation:
   use_aug: true
+  # (augment specifiche sono gestite nel dataset.py, ma lo switch è qui)
 
+
+# ===========================
+# DATASET OPTIONS
+# ===========================
 dataset:
-  use_subset: true
-  subset_size: 500
+  img_size: [256, 256]          # ✓ Consigliatissimo per UNet 32/64
+  subset_size: 500              # per debug; lo puoi disattivare
   subset_seed: 42
-
+  augment: true                 # ridondante ma utile per chiarezza
