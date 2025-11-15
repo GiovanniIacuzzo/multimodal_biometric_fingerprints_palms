@@ -1,0 +1,30 @@
+# ===========================
+# CONFIGURAZIONE TRAINING BINARIZE
+# ===========================
+
+paths:
+  train_dir: "dataset/processed/"
+  val_split: 0.2
+  inference_dir: dataset/processed/segmentation
+  inference_out_dir: "dataset/processed/binarize"
+
+model:
+  in_channels: 1
+  out_channels: 1
+  base_channels: 32
+
+training:
+  batch_size: 8
+  epochs: 10
+  lr: 0.0001
+  num_workers: 2
+  device: "mps"
+
+augmentation:
+  use_aug: true
+
+dataset:
+  use_subset: true
+  subset_size: 500
+  subset_seed: 42
+
