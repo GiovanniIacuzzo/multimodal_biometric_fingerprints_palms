@@ -3,8 +3,8 @@
 # ===================================
 
 paths:
-  train_dir: "dataset/processed/"     # Cartella con input / mask
-  val_split: 0.2                      # Percentuale validation
+  train_dir: "dataset/processed/"          # Cartella con input / mask
+  val_split: 0.2                           # Percentuale validation
   inference_dir: "dataset/processed/segmentation"
   inference_out_dir: "dataset/processed/binarize"
 
@@ -12,30 +12,34 @@ paths:
   ckpt_dir: "data/checkpoints/binarize"
   vis_dir: "data/vis/binarize"
 
-
 # ===========================
 # MODEL CONFIG
 # ===========================
 model:
-  in_channels: 1
-  out_channels: 1
-  base_channels: 32        # 32 = leggero / 64 = più potente (consigliato se hai GPU)
-
+  embed_dim: 768
+  patch_size: 16
+  encoder_depth: 4
+  num_heads: 8
+  in_ch: 1
+  out_ch: 1
+  base_channels: 32                # 32 = leggero / 64 = più potente
+  pretrained_model: "vit_base_patch16_224"  # Nome timm encoder pre-addestrato, lascia vuoto se non vuoi
+  freeze_encoder: false             # True → non aggiorna pesi encoder durante fine-tune
 
 # ===========================
 # TRAINING CONFIG
 # ===========================
 training:
   batch_size: 8
-  epochs: 10               # Alza pure a 40–60 per massimo quality
+  epochs: 5
   lr: 0.0001
   weight_decay: 0.0001
   num_workers: 4
-  device: "mps"            # "cpu", "cuda", "mps"
+  device: "mps"                     # "cpu", "cuda", "mps"
   seed: 42
 
-  # Mixed precision (sì su CUDA, no su MPS)
-  amp: false               # MPS non supporta AMP → deve essere false
+  # Mixed precision
+  amp: true                          # True su CUDA, False su MPS/CPU
 
   # Gradient clipping
   max_grad_norm: 1.0
@@ -45,33 +49,33 @@ training:
   threshold: 0.5
 
   # Checkpointing
-  save_every: 999            # salva ogni N epoch
-  save_val_visuals: true     # salva predizioni in validation
+  save_every: 5                      # salva ogni N epoch
+  save_val_visuals: true             # salva predizioni in validation
+  checkpoint_path: null               # Percorso checkpoint da caricare se vuoi fare fine-tune
 
   # Early stopping
-  early_stopping_patience: 5
+  early_stopping_patience: 10
 
   # Scheduler (scegli uno)
   scheduler:
-    type: "ReduceLROnPlateau"   # oppure "CosineWarmRestarts"
+    type: "ReduceLROnPlateau"       # oppure "CosineWarmRestarts"
     patience: 5
     factor: 0.5
-    min_lr: 0.000001
-
+    min_lr: 1e-6
+    T_0: 10                          # per CosineWarmRestarts
+    T_mult: 1
 
 # ===========================
 # AUGMENTATION
 # ===========================
 augmentation:
   use_aug: true
-  # (augment specifiche sono gestite nel dataset.py, ma lo switch è qui)
-
 
 # ===========================
 # DATASET OPTIONS
 # ===========================
 dataset:
-  img_size: [256, 256]          # ✓ Consigliatissimo per UNet 32/64
-  subset_size: 500              # per debug; lo puoi disattivare
+  img_size: [224, 224]               # Consigliato per UNet 32/64
+  subset_size: -1                     # -1 = usa tutto, altrimenti numero di campioni per debug
   subset_seed: 42
-  augment: true                 # ridondante ma utile per chiarezza
+  augment: true

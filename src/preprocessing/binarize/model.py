@@ -1,90 +1,91 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-
-# ------------------------------------------------------------
-# Block conv → normalization → activation
-# GroupNorm funziona molto meglio per batch piccoli (<8)
-# ------------------------------------------------------------
-def conv_block(in_ch, out_ch, dropout=0.0):
-    layers = [
-        nn.Conv2d(in_ch, out_ch, 3, padding=1),
-        nn.GroupNorm(num_groups=8, num_channels=out_ch),
-        nn.LeakyReLU(0.1, inplace=True),
-    ]
-    if dropout > 0:
-        layers.append(nn.Dropout2d(dropout))
-
-    layers.extend([
-        nn.Conv2d(out_ch, out_ch, 3, padding=1),
-        nn.GroupNorm(num_groups=8, num_channels=out_ch),
-        nn.LeakyReLU(0.1, inplace=True),
-    ])
-    return nn.Sequential(*layers)
-
+import timm
 
 # ------------------------------------------------------------
-# Upsample + conv invece di ConvTranspose (più stabile)
+# Pretrained ViT Encoder
 # ------------------------------------------------------------
-class UpBlock(nn.Module):
-    def __init__(self, in_ch, out_ch, dropout=0.0):
+class PretrainedEncoder(nn.Module):
+    def __init__(self, model_name='vit_base_patch16_224', pretrained=True):
         super().__init__()
-        self.up = nn.Upsample(scale_factor=2, mode="bilinear", align_corners=True)
-        self.conv = conv_block(in_ch, out_ch, dropout=dropout)
-
-    def forward(self, x, skip):
-        x = self.up(x)
-        # padding per sicurezza
-        if x.size(-1) != skip.size(-1) or x.size(-2) != skip.size(-2):
-            x = F.pad(x, (0, skip.size(-1) - x.size(-1),
-                          0, skip.size(-2) - x.size(-2)))
-        x = torch.cat([skip, x], dim=1)
-        return self.conv(x)
-
-
-# ------------------------------------------------------------
-# U-Net profonda e stabile per fingerprint binarization
-# ------------------------------------------------------------
-class UNetFingerprint(nn.Module):
-    def __init__(self, in_channels=1, out_channels=1, base=64):
-        super().__init__()
-
-        # Encoder
-        self.enc1 = conv_block(in_channels, base)          # 64
-        self.enc2 = conv_block(base, base * 2)             # 128
-        self.enc3 = conv_block(base * 2, base * 4)         # 256
-        self.enc4 = conv_block(base * 4, base * 8)         # 512
-
-        self.pool = nn.MaxPool2d(2)
-
-        # Bottleneck
-        self.bottleneck = conv_block(base * 8, base * 16, dropout=0.2)  # 1024
-
-        # Decoder
-        self.dec4 = UpBlock(base * 16 + base * 8, base * 8, dropout=0.1)
-        self.dec3 = UpBlock(base * 8 + base * 4, base * 4, dropout=0.1)
-        self.dec2 = UpBlock(base * 4 + base * 2, base * 2)
-        self.dec1 = UpBlock(base * 2 + base, base)
-
-        # Output layer
-        self.final = nn.Conv2d(base, out_channels, 1)
+        self.vit = timm.create_model(model_name, pretrained=pretrained, in_chans=1)
+        
+        if hasattr(self.vit, 'head'):
+            self.vit.head = nn.Identity()
+        elif hasattr(self.vit, 'head_dist'):
+            self.vit.head_dist = nn.Identity()
+        
+        patch_size = self.vit.patch_embed.patch_size
+        if isinstance(patch_size, int):
+            self.patch_size = (patch_size, patch_size)
+        else:
+            self.patch_size = patch_size
+        
+        self.embed_dim = self.vit.embed_dim
 
     def forward(self, x):
-        # Encoder
-        s1 = self.enc1(x)
-        s2 = self.enc2(self.pool(s1))
-        s3 = self.enc3(self.pool(s2))
-        s4 = self.enc4(self.pool(s3))
+        x = self.vit.patch_embed(x)  # [B,C,H_p,W_p] o [B,N,C]
+        
+        if x.ndim == 4:
+            B, C, H_p, W_p = x.shape
+            x = x.flatten(2).transpose(1,2)  # [B, N, C]
+        else:
+            B, N, C = x.shape
+            H_p = W_p = int(N ** 0.5)
 
-        # Bottleneck
-        b = self.bottleneck(self.pool(s4))
+        # Transformer blocks
+        x = self.vit.blocks(x)
+        x = self.vit.norm(x)
+        return x, (H_p, W_p)
 
-        # Decoder
-        d4 = self.dec4(b, s4)
-        d3 = self.dec3(d4, s3)
-        d2 = self.dec2(d3, s2)
-        d1 = self.dec1(d2, s1)
+# ------------------------------------------------------------
+# Decoder Transformer -> immagine binarizzata
+# ------------------------------------------------------------
+class TransformerDecoder(nn.Module):
+    def __init__(self, embed_dim, out_ch=1, patch_size=(16,16)):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.patch_size = patch_size  # tuple (H_patch, W_patch)
 
-        # Logits, NO sigmoid!
-        return self.final(d1)
+        # MLP: embed_dim -> patch_size_H * patch_size_W
+        self.mlp = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim),
+            nn.GELU(),
+            nn.Linear(embed_dim, patch_size[0] * patch_size[1])
+        )
+        self.out_conv = nn.Conv2d(1, out_ch, kernel_size=1)
+
+    def forward(self, x, H_p, W_p, H_in=None, W_in=None):
+        B, N, C = x.shape
+        H_patch, W_patch = self.patch_size
+
+        patches = self.mlp(x)  # [B, N, H_patch*W_patch]
+        patches = patches.view(B, 1, H_p, W_p, H_patch, W_patch)
+        patches = patches.permute(0, 1, 4, 2, 5, 3)  # [B,1,H_patch,H_p,W_patch,W_p]
+        patches = patches.reshape(B, 1, H_p*H_patch, W_p*W_patch)
+
+        out = self.out_conv(patches)
+        if H_in is not None and W_in is not None:
+            out = F.interpolate(out, size=(H_in, W_in), mode='bilinear', align_corners=False)
+        out = torch.sigmoid(out)  # valori tra 0 e 1
+        return out
+
+# ------------------------------------------------------------
+# Full model: encoder pre-trained + decoder
+# ------------------------------------------------------------
+class FingerprintTransUNet(nn.Module):
+    def __init__(self, pretrained_model='vit_base_patch16_224', out_ch=1):
+        super().__init__()
+        self.encoder = PretrainedEncoder(model_name=pretrained_model)
+        self.decoder = TransformerDecoder(
+            embed_dim=self.encoder.embed_dim,
+            out_ch=out_ch,
+            patch_size=self.encoder.patch_size
+        )
+
+    def forward(self, x):
+        B, _, H_in, W_in = x.shape
+        x, (H_p, W_p) = self.encoder(x)
+        out = self.decoder(x, H_p, W_p, H_in, W_in)
+        return out
