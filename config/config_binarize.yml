@@ -16,30 +16,24 @@ paths:
 # MODEL CONFIG
 # ===========================
 model:
-  embed_dim: 768
-  patch_size: 16
-  encoder_depth: 4
-  num_heads: 8
   in_ch: 1
   out_ch: 1
   base_channels: 32                # 32 = leggero / 64 = più potente
-  pretrained_model: "vit_base_patch16_224"  # Nome timm encoder pre-addestrato, lascia vuoto se non vuoi
-  freeze_encoder: false             # True → non aggiorna pesi encoder durante fine-tune
 
 # ===========================
 # TRAINING CONFIG
 # ===========================
 training:
-  batch_size: 8
-  epochs: 5
-  lr: 0.0001
-  weight_decay: 0.0001
+  batch_size: 32
+  epochs: 50                       # Più epoche per permettere al modello di imparare
+  lr: 0.0001                       # LR leggermente più alto per U-Net
+  weight_decay: 0.00001
   num_workers: 4
-  device: "mps"                     # "cpu", "cuda", "mps"
+  device: "mps"                    # usa CUDA se disponibile, altrimenti MPS/CPU
   seed: 42
 
   # Mixed precision
-  amp: true                          # True su CUDA, False su MPS/CPU
+  amp: true                         # True su CUDA, False su MPS/CPU
 
   # Gradient clipping
   max_grad_norm: 1.0
@@ -51,31 +45,25 @@ training:
   # Checkpointing
   save_every: 5                      # salva ogni N epoch
   save_val_visuals: true             # salva predizioni in validation
-  checkpoint_path: null               # Percorso checkpoint da caricare se vuoi fare fine-tune
+  checkpoint_path: null              # Percorso checkpoint da caricare se vuoi fare fine-tune
 
   # Early stopping
   early_stopping_patience: 10
 
-  # Scheduler (scegli uno)
+  # Scheduler
   scheduler:
     type: "ReduceLROnPlateau"       # oppure "CosineWarmRestarts"
     patience: 5
     factor: 0.5
-    min_lr: 1e-6
+    min_lr: 0.000001
     T_0: 10                          # per CosineWarmRestarts
     T_mult: 1
-
-# ===========================
-# AUGMENTATION
-# ===========================
-augmentation:
-  use_aug: true
 
 # ===========================
 # DATASET OPTIONS
 # ===========================
 dataset:
-  img_size: [224, 224]               # Consigliato per UNet 32/64
-  subset_size: -1                     # -1 = usa tutto, altrimenti numero di campioni per debug
+  img_size: [224, 224]              # Consigliato per UNet 32/64
+  subset_size: -1                    # -1 = usa tutto, altrimenti numero di campioni per debug
   subset_seed: 42
   augment: true

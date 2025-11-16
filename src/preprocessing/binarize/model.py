@@ -1,91 +1,80 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import timm
 
 # ------------------------------------------------------------
-# Pretrained ViT Encoder
+# Convolutional block: 2x Conv + BN + ReLU
 # ------------------------------------------------------------
-class PretrainedEncoder(nn.Module):
-    def __init__(self, model_name='vit_base_patch16_224', pretrained=True):
+def conv_block(in_ch, out_ch):
+    return nn.Sequential(
+        nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1),
+        nn.BatchNorm2d(out_ch),
+        nn.ReLU(inplace=True),
+        nn.Conv2d(out_ch, out_ch, kernel_size=3, padding=1),
+        nn.BatchNorm2d(out_ch),
+        nn.ReLU(inplace=True),
+    )
+
+# ------------------------------------------------------------
+# U-Net per binarizzazione fingerprint
+# ------------------------------------------------------------
+class UNet(nn.Module):
+    def __init__(self, in_ch=1, out_ch=1, base_ch=64):
         super().__init__()
-        self.vit = timm.create_model(model_name, pretrained=pretrained, in_chans=1)
-        
-        if hasattr(self.vit, 'head'):
-            self.vit.head = nn.Identity()
-        elif hasattr(self.vit, 'head_dist'):
-            self.vit.head_dist = nn.Identity()
-        
-        patch_size = self.vit.patch_embed.patch_size
-        if isinstance(patch_size, int):
-            self.patch_size = (patch_size, patch_size)
-        else:
-            self.patch_size = patch_size
-        
-        self.embed_dim = self.vit.embed_dim
+
+        # ---------- Encoder ----------
+        self.enc1 = conv_block(in_ch, base_ch)
+        self.enc2 = conv_block(base_ch, base_ch*2)
+        self.enc3 = conv_block(base_ch*2, base_ch*4)
+        self.enc4 = conv_block(base_ch*4, base_ch*8)
+
+        self.pool = nn.MaxPool2d(2)
+
+        # ---------- Bottleneck ----------
+        self.bottleneck = conv_block(base_ch*8, base_ch*16)
+
+        # ---------- Decoder ----------
+        self.upconv4 = nn.ConvTranspose2d(base_ch*16, base_ch*8, kernel_size=2, stride=2)
+        self.dec4 = conv_block(base_ch*16, base_ch*8)
+
+        self.upconv3 = nn.ConvTranspose2d(base_ch*8, base_ch*4, kernel_size=2, stride=2)
+        self.dec3 = conv_block(base_ch*8, base_ch*4)
+
+        self.upconv2 = nn.ConvTranspose2d(base_ch*4, base_ch*2, kernel_size=2, stride=2)
+        self.dec2 = conv_block(base_ch*4, base_ch*2)
+
+        self.upconv1 = nn.ConvTranspose2d(base_ch*2, base_ch, kernel_size=2, stride=2)
+        self.dec1 = conv_block(base_ch*2, base_ch)
+
+        # ---------- Output ----------
+        self.out_conv = nn.Conv2d(base_ch, out_ch, kernel_size=1)
+        self.sigmoid = nn.Identity()  # sigmoid applicata solo in inferenza/loss
 
     def forward(self, x):
-        x = self.vit.patch_embed(x)  # [B,C,H_p,W_p] o [B,N,C]
-        
-        if x.ndim == 4:
-            B, C, H_p, W_p = x.shape
-            x = x.flatten(2).transpose(1,2)  # [B, N, C]
-        else:
-            B, N, C = x.shape
-            H_p = W_p = int(N ** 0.5)
+        # ----- Encoder -----
+        e1 = self.enc1(x)
+        e2 = self.enc2(self.pool(e1))
+        e3 = self.enc3(self.pool(e2))
+        e4 = self.enc4(self.pool(e3))
 
-        # Transformer blocks
-        x = self.vit.blocks(x)
-        x = self.vit.norm(x)
-        return x, (H_p, W_p)
+        # ----- Bottleneck -----
+        b = self.bottleneck(self.pool(e4))
 
-# ------------------------------------------------------------
-# Decoder Transformer -> immagine binarizzata
-# ------------------------------------------------------------
-class TransformerDecoder(nn.Module):
-    def __init__(self, embed_dim, out_ch=1, patch_size=(16,16)):
-        super().__init__()
-        self.embed_dim = embed_dim
-        self.patch_size = patch_size  # tuple (H_patch, W_patch)
+        # ----- Decoder -----
+        d4 = self.upconv4(b)
+        d4 = torch.cat([d4, e4], dim=1)
+        d4 = self.dec4(d4)
 
-        # MLP: embed_dim -> patch_size_H * patch_size_W
-        self.mlp = nn.Sequential(
-            nn.Linear(embed_dim, embed_dim),
-            nn.GELU(),
-            nn.Linear(embed_dim, patch_size[0] * patch_size[1])
-        )
-        self.out_conv = nn.Conv2d(1, out_ch, kernel_size=1)
+        d3 = self.upconv3(d4)
+        d3 = torch.cat([d3, e3], dim=1)
+        d3 = self.dec3(d3)
 
-    def forward(self, x, H_p, W_p, H_in=None, W_in=None):
-        B, N, C = x.shape
-        H_patch, W_patch = self.patch_size
+        d2 = self.upconv2(d3)
+        d2 = torch.cat([d2, e2], dim=1)
+        d2 = self.dec2(d2)
 
-        patches = self.mlp(x)  # [B, N, H_patch*W_patch]
-        patches = patches.view(B, 1, H_p, W_p, H_patch, W_patch)
-        patches = patches.permute(0, 1, 4, 2, 5, 3)  # [B,1,H_patch,H_p,W_patch,W_p]
-        patches = patches.reshape(B, 1, H_p*H_patch, W_p*W_patch)
+        d1 = self.upconv1(d2)
+        d1 = torch.cat([d1, e1], dim=1)
+        d1 = self.dec1(d1)
 
-        out = self.out_conv(patches)
-        if H_in is not None and W_in is not None:
-            out = F.interpolate(out, size=(H_in, W_in), mode='bilinear', align_corners=False)
-        out = torch.sigmoid(out)  # valori tra 0 e 1
-        return out
-
-# ------------------------------------------------------------
-# Full model: encoder pre-trained + decoder
-# ------------------------------------------------------------
-class FingerprintTransUNet(nn.Module):
-    def __init__(self, pretrained_model='vit_base_patch16_224', out_ch=1):
-        super().__init__()
-        self.encoder = PretrainedEncoder(model_name=pretrained_model)
-        self.decoder = TransformerDecoder(
-            embed_dim=self.encoder.embed_dim,
-            out_ch=out_ch,
-            patch_size=self.encoder.patch_size
-        )
-
-    def forward(self, x):
-        B, _, H_in, W_in = x.shape
-        x, (H_p, W_p) = self.encoder(x)
-        out = self.decoder(x, H_p, W_p, H_in, W_in)
-        return out
+        out = self.out_conv(d1)
+        return self.sigmoid(out)

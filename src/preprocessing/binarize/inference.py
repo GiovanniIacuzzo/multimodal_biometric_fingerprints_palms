@@ -6,7 +6,7 @@ from PIL import Image
 from tqdm import tqdm
 from pathlib import Path
 
-from src.preprocessing.binarize.model import FingerprintTransUNet
+from src.preprocessing.binarize.model import UNet
 
 # ---------------------------
 # Config loader
@@ -18,12 +18,12 @@ def load_config(path="config/config_binarize.yml"):
 # ---------------------------
 # Model loader
 # ---------------------------
-def load_model(weights_path, device, pretrained_model='vit_base_patch16_224'):
-    model = FingerprintTransUNet(pretrained_model=pretrained_model, out_ch=1)
-    model.load_state_dict(torch.load(weights_path, map_location=device))
+def load_model(weights_path, device, base_ch):
+    model = UNet(in_ch=1, out_ch=1, base_ch=base_ch)
+    ckpt = torch.load(weights_path, map_location=device)
+    model.load_state_dict(ckpt, strict=True)
     model.to(device)
     model.eval()
-    # print(f"[INFO] Modello caricato: {weights_path}")
     return model
 
 # ---------------------------
@@ -42,7 +42,6 @@ def save_mask(mask_tensor, save_path):
     mask = mask_tensor.squeeze().cpu().numpy()  # [H,W]
     mask_img = Image.fromarray((mask*255).astype("uint8"))
     mask_img.save(save_path)
-    # print(f"[INFO] Salvata mask: {save_path}")
 
 # ---------------------------
 # Inferenza su cartella
@@ -56,8 +55,6 @@ def inference_on_folder(model, input_dir, output_dir, device, img_size=(256,256)
     if len(input_files) == 0:
         print(f"[WARNING] Nessuna immagine trovata in {input_dir}")
         return
-
-    # print(f"[INFO] {len(input_files)} immagini trovate in {input_dir}")
 
     for f in tqdm(input_files, desc="Inferencing"):
         img_path = input_dir / f
@@ -77,17 +74,18 @@ def inference_on_folder(model, input_dir, output_dir, device, img_size=(256,256)
 def main(config_path="config/config_binarize.yml"):
     cfg = load_config(config_path)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+    device = torch.device(
+        "cuda" if torch.cuda.is_available() else
+        "mps" if torch.backends.mps.is_available() else "cpu"
+    )
     print(f"[INFO] Device: {device}")
 
-    pretrained_model_name = cfg["model"].get("pretrained_model", "vit_base_patch16_224")
-    weights_path = Path(cfg["training"].get("ckpt_dir", "data/checkpoints/binarize")) / "last_transformer.pth"
+    # Checkpoint U-Net
+    weights_path = Path(cfg["training"].get("ckpt_dir", "data/checkpoints/binarize")) / "last_unet.pth"
+    if not weights_path.exists():
+        raise FileNotFoundError(f"Checkpoint non trovato: {weights_path}")
 
-    model = load_model(
-        weights_path=weights_path,
-        device=device,
-        pretrained_model=pretrained_model_name
-    )
+    model = load_model(weights_path=weights_path, device=device, base_ch=cfg["model"].get("base_channels",64))
 
     input_dir = cfg["paths"]["inference_dir"]
     output_dir = cfg["paths"]["inference_out_dir"]
