@@ -4,6 +4,7 @@ experiment:
 
 dataset:
   img_dir: "dataset/DBII"
+  mask_dir_base: "dataset/processed/debug"
   mask_dir: "dataset/processed/debug/mask"
   output_dir: "dataset/processed/segmentation"
   image_size: [256, 256]

@@ -7,26 +7,36 @@ from concurrent.futures import ProcessPoolExecutor
 from tqdm import tqdm
 import numpy as np
 import yaml
+from colorama import Fore, Style
 
-# ============================================================
-# LOGGING
-# ============================================================
+# ====================================================
+# LOGGING SETUP
+# ====================================================
+os.makedirs("logs", exist_ok=True)
 logging.basicConfig(
+    filename="data/metadata/matching.log",
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
+    format="[%(asctime)s] [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
 )
 
-# ============================================================
+# ====================================================
+# UTILITY
+# ====================================================
+def console_step(title: str):
+    print(f"\n{Fore.CYAN}{'='*60}")
+    print(f"{Fore.YELLOW}{title.upper()}{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+
+# ====================================================
 # MATCHING MINUTIAE
-# ============================================================
+# ====================================================
 def match_minutiae_array(coords_a: np.ndarray, coords_b: np.ndarray, sigma: float, use_type: bool = True) -> float:
-    """
-    Calcola il matching score tra due set di minutiae già caricati in memoria.
-    """
+    """Calcola il matching score tra due set di minutiae già caricati in memoria."""
     if coords_a.size == 0 or coords_b.size == 0:
         return 0.0
 
-    # Allineamento centrate
+    # Centrare i set
     centroid_a = coords_a[:, :2].mean(axis=0)
     centroid_b = coords_b[:, :2].mean(axis=0)
     coords_a[:, :2] -= centroid_a
@@ -41,13 +51,8 @@ def match_minutiae_array(coords_a: np.ndarray, coords_b: np.ndarray, sigma: floa
     score /= len(coords_a)
     return min(score, 1.0)
 
-# ============================================================
-# UTILITY
-# ============================================================
 def load_dataset(minutiae_base: str) -> Dict[str, List[np.ndarray]]:
-    """
-    Carica tutte le minutiae in memoria e converte in array numpy.
-    """
+    """Carica tutte le minutiae in memoria e converte in array numpy."""
     dataset = {}
     for root, dirs, files in os.walk(minutiae_base):
         for f in files:
@@ -63,9 +68,9 @@ def load_dataset(minutiae_base: str) -> Dict[str, List[np.ndarray]]:
                     logging.warning(f"Errore caricando {path}: {e}")
     return dataset
 
-# ============================================================
+# ====================================================
 # WORKERS
-# ============================================================
+# ====================================================
 def frr_worker(args):
     user_id, samples, sigma, use_type, match_threshold = args
     false_rejects = 0
@@ -89,23 +94,27 @@ def far_worker(args):
         total += 1
     return false_accepts, total
 
-# ============================================================
+# ====================================================
 # FRR/FAR
-# ============================================================
+# ====================================================
 def compute_frr(dataset, sigma, use_type, match_threshold, max_workers=None):
+    console_step("Calcolo FRR")
     tasks = [(user_id, samples, sigma, use_type, match_threshold) for user_id, samples in dataset.items()]
     total_false_rejects = 0
     total_comparisons = 0
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        for fr, tot in tqdm(executor.map(frr_worker, tasks), total=len(tasks), desc="FRR Matching"):
+        for fr, tot in tqdm(executor.map(frr_worker, tasks), total=len(tasks), desc="FRR Matching", ncols=90):
             total_false_rejects += fr
             total_comparisons += tot
 
     frr = total_false_rejects / total_comparisons if total_comparisons else 0.0
+    print(f"{Fore.GREEN}✔ FRR calcolato: {frr:.4f}{Style.RESET_ALL}")
+    logging.info(f"FRR: {frr:.4f}")
     return frr
 
 def compute_far(dataset, sigma, use_type, match_threshold, max_workers=None):
+    console_step("Calcolo FAR")
     users = list(dataset.keys())
     tasks = []
     for i in range(len(users)):
@@ -116,17 +125,20 @@ def compute_far(dataset, sigma, use_type, match_threshold, max_workers=None):
     total_comparisons = 0
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        for fa, tot in tqdm(executor.map(far_worker, tasks), total=len(tasks), desc="FAR Matching"):
+        for fa, tot in tqdm(executor.map(far_worker, tasks), total=len(tasks), desc="FAR Matching", ncols=90):
             total_false_accepts += fa
             total_comparisons += tot
 
     far = total_false_accepts / total_comparisons if total_comparisons else 0.0
+    print(f"{Fore.GREEN}✔ FAR calcolato: {far:.4f}{Style.RESET_ALL}")
+    logging.info(f"FAR: {far:.4f}")
     return far
 
-# ============================================================
+# ====================================================
 # MAIN
-# ============================================================
+# ====================================================
 def main(config_path="config/config_matching.yml"):
+    console_step("Caricamento Config")
     with open(config_path, "r") as f:
         cfg = yaml.safe_load(f)
 
@@ -140,21 +152,23 @@ def main(config_path="config/config_matching.yml"):
     print("Caricamento dataset...")
     dataset = load_dataset(minutiae_base)
     print(f"Utenti caricati: {len(dataset)}")
+    logging.info(f"Dataset caricato con {len(dataset)} utenti")
 
-    print("Calcolo FRR...")
-    frr = compute_frr(dataset, sigma=sigma, use_type=use_type, match_threshold=match_threshold, max_workers=max_workers)
-    print(f"FRR = {frr:.4f}")
+    frr = compute_frr(dataset, sigma, use_type, match_threshold, max_workers)
+    far = compute_far(dataset, sigma, use_type, match_threshold, max_workers)
 
-    print("Calcolo FAR...")
-    far = compute_far(dataset, sigma=sigma, use_type=use_type, match_threshold=match_threshold, max_workers=max_workers)
-    print(f"FAR = {far:.4f}")
+    console_step("Matching completato")
+    print(f"{Fore.CYAN}✨ FRR = {frr:.4f}, FAR = {far:.4f} ✨{Style.RESET_ALL}")
+    logging.info(f"Matching completato: FRR={frr:.4f}, FAR={far:.4f}")
 
-# ============================================================
+# ====================================================
 # ENTRYPOINT
-# ============================================================
+# ====================================================
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Fingerprint/Minutiae Matching")
     parser.add_argument("--config", type=str, default="config/config_matching.yml")
     args = parser.parse_args()
+
+    console_step("Avvio Matching Minutiae")
     main(config_path=args.config)
