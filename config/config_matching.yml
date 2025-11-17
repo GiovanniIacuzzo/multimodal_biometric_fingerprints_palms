@@ -1,6 +1,6 @@
 minutiae_base: "dataset/processed/minutiae"
-match_threshold: 0.3
-dist_threshold: 35.0
-use_type: false
-sigma: 11.0
+match_threshold: 0.2
+dist_threshold: 12.0
+use_type: true
+sigma: 20.0
 max_workers: 8
