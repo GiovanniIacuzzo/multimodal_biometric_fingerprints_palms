@@ -1,166 +1,170 @@
 import os
-import torch
-from typing import List, Dict, Tuple
+import json
 import logging
+from itertools import product
+from typing import Dict, List
+from concurrent.futures import ProcessPoolExecutor
 from tqdm import tqdm
-from src.db.database import load_minutiae_from_db, save_matching_result, get_image_id_by_filename
-
-logger = logging.getLogger(__name__)
-
-# ============================================================
-# RACCOLTA IMMAGINI DAI CLUSTER DEBUG
-# ============================================================
-def collect_debug_images(base_debug_dir: str = "data/processed/debug") -> List[str]:
-    """
-    Raccoglie tutti i percorsi completi delle immagini nei cluster (es: cluster_0, cluster_1, ecc.)
-    all'interno della cartella debug.
-
-    Restituisce una lista di percorsi completi (es: data/processed/debug/cluster_0/img_01.jpg)
-    """
-    if not os.path.exists(base_debug_dir):
-        logger.error(f"Cartella debug non trovata: {base_debug_dir}")
-        return []
-
-    image_files = []
-    for cluster_name in sorted(os.listdir(base_debug_dir)):
-        cluster_dir = os.path.join(base_debug_dir, cluster_name)
-        if not os.path.isdir(cluster_dir):
-            continue
-
-        # Scansione ricorsiva nel cluster (in caso ci siano sotto-cartelle per immagine)
-        for root, _, files in os.walk(cluster_dir):
-            for f in files:
-                if f.lower().endswith((".jpg", ".png", ".jpeg")):
-                    full_path = os.path.join(root, f)
-                    image_files.append(full_path)
-
-    logger.info(f"Trovate {len(image_files)} immagini in tutti i cluster sotto '{base_debug_dir}'")
-    return sorted(image_files)
-
+import numpy as np
+import yaml
 
 # ============================================================
-# PREPARAZIONE TENSORI
+# LOGGING
 # ============================================================
-def prepare_minutiae_tensors_full(
-    image_filenames: List[str], device: str = "mps"
-) -> Tuple[torch.Tensor, List[int], List[List[str]]]:
-    """
-    Restituisce:
-    - tensor [num_images, max_minutiae, 3] (x, y, orientation)
-    - lista image_ids
-    - lista tipi minutiae per ogni immagine
-    """
-    minutiae_list = []
-    types_list = []
-    image_ids = []
-
-    max_len = 0
-    for fname in image_filenames:
-        image_id = get_image_id_by_filename(os.path.basename(fname))
-        if image_id is None:
-            logger.warning(f"Immagine non trovata nel DB: {fname}")
-            minutiae_list.append([])
-            types_list.append([])
-            image_ids.append(None)
-            continue
-
-        minutiae = load_minutiae_from_db(image_id)
-        image_ids.append(image_id)
-        types_list.append([m["type"] for m in minutiae])
-        coords = [[m["x"], m["y"], m.get("orientation", 0.0)] for m in minutiae]
-        minutiae_list.append(coords)
-        max_len = max(max_len, len(coords))
-
-    num_images = len(image_filenames)
-    tensor = torch.full((num_images, max_len, 3), -1.0, dtype=torch.float32, device=device)
-
-    for i, coords in enumerate(minutiae_list):
-        if coords:
-            tensor[i, :len(coords), :] = torch.tensor(coords, dtype=torch.float32, device=device)
-
-    return tensor, image_ids, types_list
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
 
 # ============================================================
-# MATCHING COMPLETAMENTE VETTORIALE
+# MATCHING MINUTIAE TOLLERANTE
 # ============================================================
-def batch_match_from_debug(
-    debug_dir: str = "data/processed/debug",
-    method: str = "pair_matching",
-    dist_thresh: float = 25.0,
-    angle_thresh: float = 0.5,
-    device: str = "mps"
-) -> Dict[Tuple[str, str], float]:
-    """
-    Esegue il matching tra tutte le immagini nei cluster della cartella debug.
-    """
-    image_filenames = collect_debug_images(debug_dir)
-    if not image_filenames:
-        logger.error("Nessuna immagine trovata nei cluster debug.")
-        return {}
+def match_minutiae(file_a: str, file_b: str, dist_threshold: float, use_type: bool = True, sigma: float = None) -> float:
+    try:
+        with open(file_a, "r") as f:
+            minutiae_a: List[Dict] = json.load(f)
+        with open(file_b, "r") as f:
+            minutiae_b: List[Dict] = json.load(f)
+    except Exception as e:
+        logging.warning(f"Errore caricando file minutiae: {e}")
+        return 0.0
 
-    results = {}
-    tensor, image_ids, types_list = prepare_minutiae_tensors_full(image_filenames, device)
-    num_images = len(image_filenames)
+    if not minutiae_a or not minutiae_b:
+        return 0.0
 
-    logger.info(f"Avvio batch matching full vector su {num_images} immagini ({num_images*(num_images-1)//2} confronti)")
+    # Qui forziamo float64
+    coords_a = np.array([[m["x"], m["y"], 0 if m["type"]=="ending" else 1] for m in minutiae_a], dtype=np.float64)
+    coords_b = np.array([[m["x"], m["y"], 0 if m["type"]=="ending" else 1] for m in minutiae_b], dtype=np.float64)
 
-    valid_mask = tensor[:, :, 0] >= 0  # [num_images, max_len]
+    # Allineamento centrate
+    centroid_a = coords_a[:, :2].mean(axis=0)
+    centroid_b = coords_b[:, :2].mean(axis=0)
+    coords_a[:, :2] -= centroid_a
+    coords_b[:, :2] -= centroid_b
 
-    for i in tqdm(range(num_images), desc="Matching immagini (full GPU)", unit="img"):
-        id_a = image_ids[i]
-        if id_a is None or not valid_mask[i].any():
-            continue
-        t1 = tensor[i][valid_mask[i]]  # [N1,3]
-        types1 = types_list[i]
+    if sigma is None:
+        sigma = dist_threshold / 2.0
 
-        ids_j, t2_list, types2_list, idx_j_list = [], [], [], []
-        for j in range(i + 1, num_images):
-            if image_ids[j] is None or not valid_mask[j].any():
-                continue
-            ids_j.append(image_ids[j])
-            t2_list.append(tensor[j][valid_mask[j]])  # [N2_j,3]
-            types2_list.append(types_list[j])
-            idx_j_list.append(j)
+    score = 0.0
+    for x_a, y_a, t_a in coords_a:
+        dists = np.sqrt((coords_b[:,0]-x_a)**2 + (coords_b[:,1]-y_a)**2)
+        type_match = coords_b[:,2] == t_a if use_type else np.ones(len(coords_b), dtype=bool)
+        match_scores = np.exp(-(dists**2)/(2*sigma**2)) * type_match
+        score += match_scores.max()
 
-        for t in set(types1):
-            mask1 = torch.tensor([tp == t for tp in types1], device=device)
-            sel1 = t1[mask1][:, :2]
-            angles1 = t1[mask1][:, 2][:, None]
+    score /= len(coords_a)
+    return min(score, 1.0)
 
-            if sel1.shape[0] == 0:
-                continue
-
-            for k, sel2_tensor in enumerate(t2_list):
-                types2 = types2_list[k]
-                if t not in types2:
-                    continue
-                mask2 = torch.tensor([tp == t for tp in types2], device=device)
-                sel2 = sel2_tensor[mask2][:, :2]
-                angles2 = sel2_tensor[mask2][:, 2][None, :]
-
-                if sel2.shape[0] == 0:
-                    continue
-
-                diff = sel1[:, None, :] - sel2[None, :, :]
-                dist = torch.norm(diff, dim=2)
-                angle_diff = torch.abs(angles1 - angles2)
-
-                matches = (dist <= dist_thresh) & (angle_diff <= angle_thresh)
-                matched_count = matches.any(dim=1).sum().item()
-
-                total_pairs = max(sel1.shape[0], sel2.shape[0])
-                score = matched_count / total_pairs if total_pairs > 0 else 0.0
-                results[(image_filenames[i], image_filenames[idx_j_list[k]])] = score
-
-                save_matching_result(id_a, ids_j[k], score, method)
-
-    logger.info(f"Batch completato. Confronti riusciti: {len(results)} / {num_images*(num_images-1)//2}")
-    return results
 
 # ============================================================
-# ESECUZIONE PRINCIPALE
+# UTILITY PER CARICAMENTO MINUTIAE
+# ============================================================
+def load_dataset(minutiae_base: str) -> Dict[str, List[str]]:
+    dataset = {}
+    for root, dirs, files in os.walk(minutiae_base):
+        for f in files:
+            if f.endswith("_minutiae.json"):
+                user_id = f.split("_")[0]
+                path = os.path.join(root, f)
+                dataset.setdefault(user_id, []).append(path)
+    return dataset
+
+# ============================================================
+# WORKER GLOBALI PER PARALLELIZZAZIONE
+# ============================================================
+def frr_worker(args):
+    user_id, samples, dist_threshold, use_type, sigma = args
+    false_rejects = 0
+    total = 0
+    for i in range(len(samples)):
+        for j in range(i+1, len(samples)):
+            score = match_minutiae(samples[i], samples[j], dist_threshold=dist_threshold, use_type=use_type, sigma=sigma)
+            if score < 0.5:  # soglia di accettazione
+                false_rejects += 1
+            total += 1
+    return false_rejects, total
+
+def far_worker(args):
+    samples_i, samples_j, dist_threshold, use_type, sigma = args
+    false_accepts = 0
+    total = 0
+    for s1, s2 in product(samples_i, samples_j):
+        score = match_minutiae(s1, s2, dist_threshold=dist_threshold, use_type=use_type, sigma=sigma)
+        if score >= 0.5:
+            false_accepts += 1
+        total += 1
+    return false_accepts, total
+
+# ============================================================
+# CALCOLO FRR
+# ============================================================
+def compute_frr(dataset: Dict[str, List[str]], dist_threshold: float, use_type: bool, sigma: float, max_workers: int = None) -> float:
+    tasks = [(user_id, samples, dist_threshold, use_type, sigma) for user_id, samples in dataset.items()]
+    total_false_rejects = 0
+    total_comparisons = 0
+
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        for fr, tot in tqdm(executor.map(frr_worker, tasks), total=len(tasks), desc="FRR Matching"):
+            total_false_rejects += fr
+            total_comparisons += tot
+
+    frr = total_false_rejects / total_comparisons if total_comparisons else 0.0
+    return frr
+
+# ============================================================
+# CALCOLO FAR
+# ============================================================
+def compute_far(dataset: Dict[str, List[str]], dist_threshold: float, use_type: bool, sigma: float, max_workers: int = None) -> float:
+    users = list(dataset.keys())
+    tasks = []
+    for i in range(len(users)):
+        for j in range(i + 1, len(users)):
+            tasks.append((dataset[users[i]], dataset[users[j]], dist_threshold, use_type, sigma))
+
+    total_false_accepts = 0
+    total_comparisons = 0
+
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        for fa, tot in tqdm(executor.map(far_worker, tasks), total=len(tasks), desc="FAR Matching"):
+            total_false_accepts += fa
+            total_comparisons += tot
+
+    far = total_false_accepts / total_comparisons if total_comparisons else 0.0
+    return far
+
+# ============================================================
+# MAIN
+# ============================================================
+def main(config_path: str = "config/config_matching.yml"):
+    # Carica configurazione
+    with open(config_path, "r") as f:
+        cfg = yaml.safe_load(f)
+
+    minutiae_base = cfg.get("minutiae_base", "dataset/processed/minutiae")
+    dist_threshold = cfg.get("dist_threshold", 15.0)
+    use_type = cfg.get("use_type", True)
+    sigma = cfg.get("sigma", dist_threshold/2.0)
+    max_workers = cfg.get("max_workers", 8)
+
+    print("Caricamento dataset...")
+    dataset = load_dataset(minutiae_base)
+    print(f"Utenti caricati: {len(dataset)}")
+
+    print("Calcolo FRR...")
+    frr = compute_frr(dataset, dist_threshold=dist_threshold, use_type=use_type, sigma=sigma, max_workers=max_workers)
+    print(f"FRR = {frr:.4f}")
+
+    print("Calcolo FAR...")
+    far = compute_far(dataset, dist_threshold=dist_threshold, use_type=use_type, sigma=sigma, max_workers=max_workers)
+    print(f"FAR = {far:.4f}")
+
+# ============================================================
+# ENTRYPOINT
 # ============================================================
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
-    results = batch_match_from_debug("data/processed/debug", device="cuda")
-    print(f"Matching completato su {len(results)} coppie.")
+    import argparse
+    parser = argparse.ArgumentParser(description="Fingerprint/Minutiae Matching")
+    parser.add_argument("--config", type=str, default="config/config_matching.yml")
+    args = parser.parse_args()
+
+    main(config_path=args.config)

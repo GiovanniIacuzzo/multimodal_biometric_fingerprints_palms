@@ -12,7 +12,7 @@ from config.config_fingerprint import get_path
 from src.catalog.prepare_catalog import main as prepare_catalog
 from src.preprocessing.run_preprocessing import run_preprocessing
 from src.features.extract_features import main as extract_minutiae
-from src.matching.match_features import batch_match_from_debug
+from src.matching.match_features import main as matching_minutiae
 from src.db.database import clear_database, get_all_image_filenames
 from src.evaluation.evaluate_performance import evaluate_results
 
@@ -55,28 +55,16 @@ def run_pipeline():
         extract_minutiae()
         print(f"[INFO] Estrazione minutiae completata in {time.time()-start_feat:.2f} sec")
 
-        """ # -------------------------------------------------
-        print("\n[4/5] Matching impronte...")
-        filenames = get_all_image_filenames()
-        match_results = batch_match_from_debug(debug_dir="data/processed/debug", device="mps")
-
-        print("\nRisultati matching:")
-        for pair, score in match_results.items():
-            print(f"{pair[0]} vs {pair[1]} -> Similarità: {score:.2f}")
-        
-        results_path = os.path.join(config_fingerprint.METADATA_DIR, "match_results.json")
-
-        json_results = {f"{str(k[0])}_vs_{str(k[1])}": v for k, v in match_results.items()}
-
-        with open(results_path, "w") as f:
-            json.dump(json_results, f, indent=4)
-
         # -------------------------------------------------
+        print("\n[4/5] Matching impronte...")
+        matching_minutiae(config_path="config/config_matching.yml")
+
+        """ # -------------------------------------------------
         print("\n[5/5] Valutazione performance...")
 
         # Valutazione finale
         metrics = evaluate_results(results_path, output_path=os.path.join(config_fingerprint.METADATA_DIR, "performance_metrics.json"), plot_dir=config_fingerprint.METADATA_DIR)
- """
+        """
         print("\nPipeline completata con successo!")
 
     except Exception as e:
