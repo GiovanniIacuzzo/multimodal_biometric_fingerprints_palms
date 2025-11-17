@@ -180,6 +180,86 @@ Ogni fase della pipeline genera un output intermedio, utilizzato come input per 
 input → Normalizzazione → Segmentazione → Binarizzazione → Thinning → Orientamento → Estrazione minutiae → Matching
 ```
 
+## Struttura della repository
+
+```bash
+├── 📁 classifier
+│   ├── 📁 dataset2
+│   │   ├── 🐍 dataset.py
+│   │   └── 🐍 preprocessing.py
+│   │
+│   ├── 📁 models
+│   │   ├── 🐍 backbone.py
+│   │   ├── 🐍 projection_head.py
+│   │   └── 🐍 ssl_model.py
+│   │
+│   ├── 📁 utils
+│   │   ├── 🐍 cluster_embeddings.py
+│   │   ├── 🐍 extract_embeddings.py
+│   │   ├── 🐍 loss.py
+│   │   ├── 🐍 train_ssl.py
+│   │   └── 🐍 utils.py
+│   │
+│   ├── 🐍 main_ssl_pipeline.py
+│   ├── 🐍 sorted.py
+│   └── 🐍 verify.py
+│
+├── 📁 config
+│   ├── 🐍 config_classifier.py
+│   ├── ⚙️ config_classifier.yml
+│   ├── 🐍 config_fingerprint.py
+│   ├── ⚙️ config_fingerprint.yml
+│   ├── ⚙️ config_matching.yml
+│   ├── ⚙️ config_path.yml
+│   ├── ⚙️ config_segmentation.yml
+│   └── ⚙️ environment.yml
+│
+├── 📁 scripts
+│   └── 🐍 run_pipeline.py
+│
+├── 📁 src
+│   ├── 📁 catalog
+│   │   ├── 🐍 __init__.py
+│   │   └── 🐍 prepare_catalog.py
+│   │
+│   ├── 📁 db
+│   │   ├── 🐍 database.py
+│   │   └── 📄 schema.sql
+│   │
+│   ├── 📁 evaluation
+│   │   ├── 🐍 __init__.py
+│   │   └── 🐍 evaluate_performance.py
+│   │
+│   ├── 📁 features
+│   │   ├── 🐍 __init__.py
+│   │   ├── 🐍 extract_features.py
+│   │   └── 🐍 post_processing.py
+│   │
+│   ├── 📁 matching
+│   │   ├── 🐍 __init__.py
+│   │   ├── 🐍 match_features.py
+│   │   └── 🐍 sweep.py
+│   │
+│   └── 📁 preprocessing
+│       ├── 📁 segmentation
+│       │   ├── 🐍 __init__.py
+│       │   ├── 🐍 dataset.py
+│       │   ├── 🐍 inference.py
+│       │   ├── 🐍 model.py
+│       │   └── 🐍 train.py
+│       │
+│       ├── 🐍 __init__.py
+│       ├── 🐍 fingerprint_preprocess.py
+│       ├── 🐍 orientation.py
+│       └── 🐍 run_preprocessing.py
+│
+├── ⚙️ .gitignore
+├── 📝 README.md
+│
+├── 📄 prepare.bat
+└── 📄 prepare.sh
+```
+
 ---
 
 > [!CAUTION]
