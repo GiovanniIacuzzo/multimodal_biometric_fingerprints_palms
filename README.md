@@ -96,7 +96,7 @@ Per quantificare la qualità dei cluster, si calcolano metriche standard come:
 Queste metriche permettono di confrontare diversi algoritmi di clustering e configurazioni del modello SSL, garantendo una valutazione robusta e oggettiva della qualità delle rappresentazioni biometriche.
 
 ---
-> [!IMPORTANT] 
+> [!NOTE] 
 >
 > Questa sezione descrive quindi **la logica e il razionale del clustering**, senza entrare nei dettagli di implementazione, preparando il lettore a comprendere successivamente come eseguire la pipeline.
 
