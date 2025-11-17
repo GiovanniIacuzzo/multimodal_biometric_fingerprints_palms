@@ -14,6 +14,7 @@ def get_path(key: str, default: str) -> str:
 
 METADATA_DIR   = get_path("metadata_dir", "data/metadata")
 DATASET_DIR   = get_path("dataset_dir", "./dataset")
+SORTED_DATASET_DIR = get_path("sorted_dataset_dir", "./dataset/sorted_dataset")
 PROCESSED_DIR = get_path("processed_dir", "./dataset/processed")
 FEATURES_DIR  = get_path("features_dir", "./data/features")
 DEBUG_DIR     = get_path("debug_dir", "./data/features/debug")

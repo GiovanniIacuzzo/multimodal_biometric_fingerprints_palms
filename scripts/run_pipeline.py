@@ -42,20 +42,20 @@ def run_pipeline():
         print("\n[2/5] Preprocessing immagini...")
         start_pre = time.time()
         run_preprocessing(
-            input_dir=get_path("dataset_dir", "./dataset/sorted_dataset"),
+            input_dir=get_path("sorted_dataset_dir", "./dataset/sorted_dataset"),
             output_dir=get_path("processed_dir", "./dataset/processed"),
             debug=True,
             small_subset=False
         )
         print(f"[INFO] Preprocessing completato in {time.time()-start_pre:.2f} sec")
 
-        """ # -------------------------------------------------
+        # -------------------------------------------------
         print("\n[3/5] Estrazione minutiae...")
         start_feat = time.time()
         extract_minutiae()
         print(f"[INFO] Estrazione minutiae completata in {time.time()-start_feat:.2f} sec")
 
-        # -------------------------------------------------
+        """ # -------------------------------------------------
         print("\n[4/5] Matching impronte...")
         filenames = get_all_image_filenames()
         match_results = batch_match_from_debug(debug_dir="data/processed/debug", device="mps")

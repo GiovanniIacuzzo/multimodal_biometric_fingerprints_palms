@@ -6,8 +6,6 @@ from skimage.filters import threshold_otsu
 from skimage.morphology import remove_small_objects, remove_small_holes, reconstruction, skeletonize
 from scipy.ndimage import gaussian_filter, convolve, sobel
 from src.preprocessing.orientation import compute_orientation_map, visualize_orientation
-# from src.preprocessing.segmentation.inference import predict_mask
-
 
 # ================================================
 # NORMALIZATION + CLAHE
@@ -135,7 +133,6 @@ def segment_fingerprint(img: np.ndarray,
 
     return cropped, cropped_mask
 
-
 # ================================================
 # SMOOTHING + THINNING
 # ================================================
@@ -219,10 +216,7 @@ def preprocess_fingerprint(img: np.ndarray,
             "mask": mask,
             "binary": binary,
             "skeleton": skeleton,
-            "orientation_blocks": orient_blocks,
-            "orientation_map": orient_img,
             "orientation_vis": orientation_vis,
-            "reliability": reliability,
         }
 
     except Exception as e:
