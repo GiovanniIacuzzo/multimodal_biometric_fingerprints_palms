@@ -1,17 +1,16 @@
 import os
 import json
 import logging
-from itertools import product
 from typing import Dict, List
-from concurrent.futures import ProcessPoolExecutor
-from tqdm import tqdm
 import numpy as np
 import yaml
 from colorama import Fore, Style
 
-# ====================================================
-# LOGGING SETUP
-# ====================================================
+from src.matching.FRR import compute_frr
+from src.matching.FAR import compute_far
+from src.matching.ROC import plot_roc
+from src.matching.utils import console_step
+
 os.makedirs("logs", exist_ok=True)
 logging.basicConfig(
     filename="data/metadata/matching.log",
@@ -20,123 +19,56 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S"
 )
 
-# ====================================================
-# UTILITY
-# ====================================================
-def console_step(title: str):
-    print(f"\n{Fore.CYAN}{'='*60}")
-    print(f"{Fore.YELLOW}{title.upper()}{Style.RESET_ALL}")
-    print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
-
-# ====================================================
-# MATCHING MINUTIAE
-# ====================================================
-def match_minutiae_array(coords_a: np.ndarray, coords_b: np.ndarray, sigma: float, use_type: bool = True) -> float:
-    """Calcola il matching score tra due set di minutiae già caricati in memoria."""
-    if coords_a.size == 0 or coords_b.size == 0:
-        return 0.0
-
-    # Centrare i set
-    centroid_a = coords_a[:, :2].mean(axis=0)
-    centroid_b = coords_b[:, :2].mean(axis=0)
-    coords_a[:, :2] -= centroid_a
-    coords_b[:, :2] -= centroid_b
-
-    score = 0.0
-    for x_a, y_a, t_a in coords_a:
-        dists = np.sqrt((coords_b[:, 0] - x_a) ** 2 + (coords_b[:, 1] - y_a) ** 2)
-        type_match = coords_b[:, 2] == t_a if use_type else np.ones(len(coords_b), dtype=bool)
-        match_scores = np.exp(-(dists ** 2) / (2 * sigma ** 2)) * type_match
-        score += match_scores.max()
-    score /= len(coords_a)
-    return min(score, 1.0)
-
-def load_dataset(minutiae_base: str) -> Dict[str, List[np.ndarray]]:
-    """Carica tutte le minutiae in memoria e converte in array numpy."""
+def load_dataset(minutiae_base: str, max_per_user: int = None) -> Dict[str, List[np.ndarray]]:
     dataset = {}
+    files_per_user = {}
+
+    # Raggruppa i file JSON per utente
     for root, dirs, files in os.walk(minutiae_base):
         for f in files:
             if f.endswith("_minutiae.json"):
                 user_id = f.split("_")[0]
                 path = os.path.join(root, f)
-                try:
-                    with open(path, "r") as fin:
-                        minutiae = json.load(fin)
-                    coords = np.array([[m["x"], m["y"], 0 if m["type"] == "ending" else 1] for m in minutiae], dtype=np.float64)
-                    dataset.setdefault(user_id, []).append(coords)
-                except Exception as e:
-                    logging.warning(f"Errore caricando {path}: {e}")
+                files_per_user.setdefault(user_id, []).append(path)
+
+    # Ordina i file e carica solo i primi max_per_user
+    for user_id, paths in files_per_user.items():
+        paths_sorted = sorted(paths)  # ordina alfabeticamente
+        if max_per_user is not None:
+            paths_sorted = paths_sorted[:max_per_user]
+
+        # print(f"\nUtente {user_id} - caricati {len(paths_sorted)} file JSON:")
+        # for p in paths_sorted:
+        #     print(f"  {p}")
+
+        dataset[user_id] = []
+        for path in paths_sorted:
+            try:
+                with open(path, "r") as fin:
+                    minutiae = json.load(fin)
+                arr = []
+                for m in minutiae:
+                    t = 0 if m.get("type","ending") == "ending" else 1
+                    arr.append([
+                        float(m["x"]),
+                        float(m["y"]),
+                        float(t),
+                        float(m.get("orientation", 0.0)),
+                        float(m.get("quality", 0.0)),
+                        float(m.get("coherence", 0.0)),
+                        float(m.get("angular_stability", 0.0))
+                    ])
+                coords = np.array(arr, dtype=np.float64)
+                dataset[user_id].append(coords)
+            except Exception as e:
+                logging.warning(f"Errore caricando {path}: {e}")
+
     return dataset
 
-# ====================================================
-# WORKERS
-# ====================================================
-def frr_worker(args):
-    user_id, samples, sigma, use_type, match_threshold = args
-    false_rejects = 0
-    total = 0
-    for i in range(len(samples)):
-        for j in range(i + 1, len(samples)):
-            score = match_minutiae_array(samples[i], samples[j], sigma=sigma, use_type=use_type)
-            if score < match_threshold:
-                false_rejects += 1
-            total += 1
-    return false_rejects, total
 
-def far_worker(args):
-    samples_i, samples_j, sigma, use_type, match_threshold = args
-    false_accepts = 0
-    total = 0
-    for s1, s2 in product(samples_i, samples_j):
-        score = match_minutiae_array(s1, s2, sigma=sigma, use_type=use_type)
-        if score >= match_threshold:
-            false_accepts += 1
-        total += 1
-    return false_accepts, total
-
-# ====================================================
-# FRR/FAR
-# ====================================================
-def compute_frr(dataset, sigma, use_type, match_threshold, max_workers=None):
-    console_step("Calcolo FRR")
-    tasks = [(user_id, samples, sigma, use_type, match_threshold) for user_id, samples in dataset.items()]
-    total_false_rejects = 0
-    total_comparisons = 0
-
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        for fr, tot in tqdm(executor.map(frr_worker, tasks), total=len(tasks), desc="FRR Matching", ncols=90):
-            total_false_rejects += fr
-            total_comparisons += tot
-
-    frr = total_false_rejects / total_comparisons if total_comparisons else 0.0
-    print(f"{Fore.GREEN}✔ FRR calcolato: {frr:.4f}{Style.RESET_ALL}")
-    logging.info(f"FRR: {frr:.4f}")
-    return frr
-
-def compute_far(dataset, sigma, use_type, match_threshold, max_workers=None):
-    console_step("Calcolo FAR")
-    users = list(dataset.keys())
-    tasks = []
-    for i in range(len(users)):
-        for j in range(i + 1, len(users)):
-            tasks.append((dataset[users[i]], dataset[users[j]], sigma, use_type, match_threshold))
-
-    total_false_accepts = 0
-    total_comparisons = 0
-
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        for fa, tot in tqdm(executor.map(far_worker, tasks), total=len(tasks), desc="FAR Matching", ncols=90):
-            total_false_accepts += fa
-            total_comparisons += tot
-
-    far = total_false_accepts / total_comparisons if total_comparisons else 0.0
-    print(f"{Fore.GREEN}✔ FAR calcolato: {far:.4f}{Style.RESET_ALL}")
-    logging.info(f"FAR: {far:.4f}")
-    return far
-
-# ====================================================
-# MAIN
-# ====================================================
+# ------------------------------------------------------------
+# MAIN CLI
+# ------------------------------------------------------------
 def main(config_path="config/config_matching.yml"):
     console_step("Caricamento Config")
     with open(config_path, "r") as f:
@@ -144,26 +76,44 @@ def main(config_path="config/config_matching.yml"):
 
     minutiae_base = cfg.get("minutiae_base", "dataset/processed/minutiae")
     dist_threshold = cfg.get("dist_threshold", 25.0)
-    sigma = cfg.get("sigma", dist_threshold / 2.0)
+    orient_thresh_deg = cfg.get("orient_thresh_deg", 20.0)
     use_type = cfg.get("use_type", True)
-    match_threshold = cfg.get("match_threshold", 0.5)
+    ransac_iter = cfg.get("ransac_iter", 300)
+    min_inliers = cfg.get("min_inliers", 6)
+    match_threshold = cfg.get("match_threshold", 0.4)
     max_workers = cfg.get("max_workers", 8)
 
     print("Caricamento dataset...")
-    dataset = load_dataset(minutiae_base)
+    dataset = load_dataset(minutiae_base, max_per_user=5)
     print(f"Utenti caricati: {len(dataset)}")
     logging.info(f"Dataset caricato con {len(dataset)} utenti")
 
-    frr = compute_frr(dataset, sigma, use_type, match_threshold, max_workers)
-    far = compute_far(dataset, sigma, use_type, match_threshold, max_workers)
+    frr, genuine_scores = compute_frr(
+        dataset, dist_threshold, orient_thresh_deg,
+        use_type, ransac_iter, min_inliers, match_threshold, max_workers
+    )
 
+    far, impostor_scores = compute_far(
+        dataset, dist_threshold, orient_thresh_deg,
+        use_type, ransac_iter, min_inliers, match_threshold, max_workers
+    )
+    
     console_step("Matching completato")
     print(f"{Fore.CYAN}✨ FRR = {frr:.4f}, FAR = {far:.4f} ✨{Style.RESET_ALL}")
     logging.info(f"Matching completato: FRR={frr:.4f}, FAR={far:.4f}")
 
-# ====================================================
-# ENTRYPOINT
-# ====================================================
+    console_step("Generazione ROC Curve")
+
+    fpr, tpr, roc_auc = plot_roc(
+        genuine_scores,
+        impostor_scores,
+        save_path="data/metadata/ROC_curve.png"
+    )
+
+    print(f"{Fore.GREEN}ROC AUC = {roc_auc:.4f}{Style.RESET_ALL}")
+    logging.info(f"ROC curve generata AUC={roc_auc:.4f}")
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Fingerprint/Minutiae Matching")

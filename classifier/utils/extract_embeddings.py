@@ -53,7 +53,7 @@ def extract_embeddings(
 
     # Modello
     if model is None:
-        model = SSLModel(backbone_name="resnet50").to(device)
+        model = SSLModel(backbone_name="vit_base_patch16_224").to(device)
         if model_path:
             load_model(model, model_path, device=device)
     else:

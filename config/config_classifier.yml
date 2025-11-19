@@ -29,27 +29,22 @@ ssl:
     freeze_backbone: true
 
   training:
-    epochs: 2
-    lr: 0.001
+    epochs: 20
+    lr: 0.00001
     temperature: 0.5
     optimizer: adam
-    weight_decay: 0.0001
+    weight_decay: 0.00001
     gradient_clip: 1.0
-    amp: true
+    amp: false
     save_every: 10
     warmup_epochs: 5
 
   clustering:
-    n_clusters: 5
-    min_cluster_size: 5
+    n_clusters: 8
+    min_cluster_size: 8
     cluster_metric: cosine
     dim_reduction: pca
     dim: 100
-
-  finetune:
-    num_classes: 8
-    finetune_epochs: 10
-    train_split: 0.8
 
   logging:
     log_file: ./classifier/save_models/train.log
