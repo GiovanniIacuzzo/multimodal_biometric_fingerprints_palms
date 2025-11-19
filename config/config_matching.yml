@@ -6,28 +6,20 @@ data:
   minutiae_base: "dataset/processed/minutiae"
 
 matching:
-  # Distanza massima per considerare due minuzie compatibili
-  dist_threshold: 18.0
-  orient_thresh_deg: 15.0
-
-  # Considerare il tipo di minutia (ending / bifurcation)
-  use_type: true
+  dist_threshold: 22.0          # leggermente più permissiva
+  orient_thresh_deg: 38.0       # ~0.38 rad
+  use_type: true                # i dataset seri usano il tipo
 
 ransac:
-  ransac_iter: 500
-  min_inliers: 8
-  stop_inlier_ratio: 0.65
+  ransac_iter: 800              # più iterazioni → più robusto
+  min_inliers: 7                # leggermente meno restrittivo
+  stop_inlier_ratio: 0.15       # evita early stopping troppo presto
   seed: 42
 
 scoring:
-  # Soglia decisiva per match accettato
-  match_threshold: 0.48
-  start: 0.05       # soglia minima da testare
-  stop: 0.9         # soglia massima da testare
-  num: 20           # numero di step tra min e max
+  match_threshold: 0.05         # più permissiva → meno FRR
 
 evaluation:
-  # Quanti worker usare
   max_workers: 8
 
 logging:
