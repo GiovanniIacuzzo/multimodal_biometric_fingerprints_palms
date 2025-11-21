@@ -202,7 +202,7 @@ def match_minutiae_pair(mins_a, mins_b,
                         min_inliers=6,
                         stop_inlier_ratio=0.15,
                         cross_check=True,
-                        thread_workers: int = None,
+                        thread_workers: int = 1,
                         debug: bool = False) -> Dict:
     """
     Restituisce un dict con:

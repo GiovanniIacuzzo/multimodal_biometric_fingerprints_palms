@@ -15,10 +15,10 @@ from classifier.models.ssl_model import SSLModel
 from classifier.utils.train_ssl import train_ssl
 from classifier.utils.extract_embeddings import extract_embeddings
 from classifier.utils.cluster_embeddings import (
-    cluster_kmeans, visualize_embeddings, cluster_agglomerative
+    cluster_kmeans, visualize_embeddings
 )
 
-# Carica la configurazione (root namespace)
+# Carica la configurazione
 from config.config_classifier import load_config
 
 # --- LOAD CONFIG ---
@@ -33,7 +33,6 @@ ssl_cfg = cfg.ssl          # sezione ssl con model, training, logging, ecc.
 os.makedirs(paths.save_dir, exist_ok=True)
 os.makedirs(paths.figures_dir, exist_ok=True)
 
-# Nota: nel tuo YAML log_file è dentro ssl.logging
 log_file = getattr(ssl_cfg, "logging", None)
 if log_file is not None:
     log_file = getattr(ssl_cfg.logging, "log_file", os.path.join(paths.save_dir, "train.log"))
@@ -49,14 +48,24 @@ logging.basicConfig(
 
 def extract_id(fname: str) -> str:
     """
-    Estrae l'ID dal nome del file:
-    - prende la prima parte prima di '_' 
-    - rimuove eventuali zeri iniziali
-    - se non trova nulla, ritorna '0'
+    Estrae un ID univoco dal nome file di una fingerprint.
+
+    Formati supportati:
+    - DBII:   1_1_1.jpg        -> ID = 1
+    - NIST:   F0001_01.bmp     -> ID = 1
     """
-    stem = Path(fname).stem
-    part = stem.split('_')[0]
-    return part.lstrip("0") or "0"
+    stem = Path(fname).stem.lower()
+
+    # --- Caso NIST ---
+    if stem.startswith("f") and re.match(r"f\d{4}_\d{2}$", stem):
+        # 'F0001_01' -> '0001' -> 1
+        num = stem[1:].split("_")[0]
+        return str(int(num))
+
+    # --- Caso DBII ---
+    # '1_1_1' -> '1'
+    num = stem.split("_")[0]
+    return num.lstrip("0") or "0"
 
 def console_step(title):
     """Stampa un titolo colorato per una sezione della pipeline."""
@@ -93,7 +102,20 @@ def main():
     # 1. Dataset SSL
     # ------------------------------------------------------
     console_step("Caricamento Dataset")
-    dataset_ssl = FingerprintDataset(paths.dataset_path)
+    dataset_root = Path(paths.dataset_path)
+
+    subdirs = []
+    for name in ["DBII", "Nist"]:
+        candidate = dataset_root / name
+        if candidate.is_dir():
+            subdirs.append(candidate)
+
+    if not subdirs:
+        raise RuntimeError(f"Nessun dataset trovato in {paths.dataset_path}. Attesi: DBII, Nist")
+
+    print(f"Trovati dataset: {subdirs}")
+
+    dataset_ssl = FingerprintDataset(subdirs)
     dataloader_ssl = DataLoader(
         dataset_ssl,
         batch_size=ssl_cfg.dataset.batch_size,
@@ -173,20 +195,20 @@ def main():
     )
 
     # --- Agglomerative ---
-    labels_agg, report_agg = cluster_agglomerative(
-        embeddings,
-        n_clusters=ssl_cfg.clustering.n_clusters,
-        metric='cosine',
-        dim_reduction=ssl_cfg.clustering.dim_reduction,
-        dim=ssl_cfg.clustering.dim
-    )
+    # labels_agg, report_agg = cluster_agglomerative(
+    #     embeddings,
+    #     n_clusters=ssl_cfg.clustering.n_clusters,
+    #     metric='cosine',
+    #     dim_reduction=ssl_cfg.clustering.dim_reduction,
+    #     dim=ssl_cfg.clustering.dim
+    # )
 
     # --- Salvataggio report completo ---
     metrics_path = os.path.join(paths.save_dir, "clustering_report_detailed.json")
     with open(metrics_path, "w") as f:
         json.dump({
             "kmeans": report_kmeans,
-            "agglomerative": report_agg
+            # "agglomerative": report_agg
         }, f, indent=2)
 
     print(f"✔ Report dettagliato salvato in {metrics_path}")
@@ -201,11 +223,11 @@ def main():
             method="tsne",
             save_path=os.path.join(paths.figures_dir, "tsne_kmeans.png")
         )
-        visualize_embeddings(
-            embeddings, labels=labels_agg,
-            method="tsne",
-            save_path=os.path.join(paths.figures_dir, "tsne_agglomerative.png")
-        )
+        # visualize_embeddings(
+        #     embeddings, labels=labels_agg,
+        #     method="tsne",
+        #     save_path=os.path.join(paths.figures_dir, "tsne_agglomerative.png")
+        # )
 
     if ssl_cfg.visualization.visualize_umap:
         console_step("UMAP Visualization")
@@ -214,11 +236,11 @@ def main():
             method="umap",
             save_path=os.path.join(paths.figures_dir, "umap_kmeans.png")
         )
-        visualize_embeddings(
-            embeddings, labels=labels_agg,
-            method="umap",
-            save_path=os.path.join(paths.figures_dir, "umap_agglomerative.png")
-        )
+        # visualize_embeddings(
+        #     embeddings, labels=labels_agg,
+        #     method="umap",
+        #     save_path=os.path.join(paths.figures_dir, "umap_agglomerative.png")
+        # )
 
     # ------------------------------------------------------
     # 6. Aggregazione Embeddings per ID
@@ -229,9 +251,22 @@ def main():
     id_to_filenames = defaultdict(list)
 
     for emb, fname in zip(embeddings, filenames):
+        # Determiniamo da quale dataset viene l'immagine
+        if "/DBII/" in fname or "\\DBII\\" in fname:
+            dataset_prefix = "DBII"
+        elif "/Nist/" in fname or "\\Nist\\" in fname:
+            dataset_prefix = "NIST"
+        else:
+            dataset_prefix = "UNK"
+
+        # Estrai ID come prima
         file_id = extract_id(fname)
-        id_to_embeddings[file_id].append(emb)
-        id_to_filenames[file_id].append(str(fname))
+
+        # Combina prefisso dataset + ID
+        global_id = f"{dataset_prefix}_{file_id}"
+
+        id_to_embeddings[global_id].append(emb)
+        id_to_filenames[global_id].append(str(fname))
 
     agg_embeddings = np.stack([
         np.mean(np.stack(v), axis=0) for v in id_to_embeddings.values()
@@ -240,7 +275,6 @@ def main():
 
     print(f"→ Raggruppati {len(id_list)} ID unici ({len(embeddings)} immagini totali).")
     logging.info(f"Aggregati {len(id_list)} ID unici da {len(embeddings)} immagini totali.")
-
 
     # ------------------------------------------------------
     # 7. Salvataggio Risultati

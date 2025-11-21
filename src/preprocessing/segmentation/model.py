@@ -20,7 +20,6 @@ class ConvBlock(nn.Module):
     def forward(self, x):
         return self.conv(x)
 
-
 # ---------------------------------------------------------
 # U-Net++ Nested Block
 # ---------------------------------------------------------

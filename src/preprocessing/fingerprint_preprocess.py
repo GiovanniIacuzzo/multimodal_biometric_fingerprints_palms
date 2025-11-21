@@ -221,23 +221,3 @@ def preprocess_fingerprint(img: np.ndarray,
 
     except Exception as e:
         raise RuntimeError(f"preprocess_fingerprint failed: {e}") from e
-
-if __name__ == "__main__":
-    input_dir = "dataset/DBII"
-    save_mask_dir = "dataset/masks"
-    debug_out = "debug_output"
-    max_images = 100
-
-    os.makedirs(save_mask_dir, exist_ok=True)
-
-    all_files = [f for f in os.listdir(input_dir) if f.lower().endswith((".jpg", ".png", ".jpeg"))]
-
-    for f in all_files[:max_images]:
-        img_path = os.path.join(input_dir, f)
-        img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
-        if img is None:
-            print(f"[WARN] Immagine non trovata: {img_path}")
-            continue
-        preprocess_fingerprint(img, debug_dir=debug_out, save_mask_dir=save_mask_dir, img_name=f)
-
-    print(f"Preprocessing completato. Maschere salvate in '{save_mask_dir}' per {min(max_images, len(all_files))} immagini")

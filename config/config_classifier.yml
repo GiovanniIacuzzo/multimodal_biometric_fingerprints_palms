@@ -5,7 +5,7 @@
 paths:
   base_dir: ./config
   root_dir: ..
-  dataset_path: ./dataset/DBII
+  dataset_path: ./dataset/
   save_dir: ./classifier/save_models
   figures_dir: ./classifier/figures
   sorted_dir: ./dataset/sorted_dataset
@@ -17,26 +17,26 @@ paths:
 ssl:
   dataset:
     batch_size: 16
-    num_workers: 2
+    num_workers: 8
     seed: 42
 
   model:
-    backbone: vit_base_patch16_224
-    embedding_dim: 512
+    backbone: tf_efficientnetv2_s.in21k
+    embedding_dim: 756
     proj_hidden_dim: 512
     proj_output_dim: 256
     proj_num_layers: 2
     freeze_backbone: true
 
   training:
-    epochs: 20
+    epochs: 3
     lr: 0.00001
     temperature: 0.5
     optimizer: adam
     weight_decay: 0.00001
     gradient_clip: 1.0
     amp: false
-    save_every: 10
+    save_every: 30
     warmup_epochs: 5
 
   clustering:
@@ -63,7 +63,9 @@ ssl:
 sorted:
   input:
     csv_path: classifier/save_models/id_clusters.csv
-    dataset_root: dataset/DBII
+    dataset_root:
+      - dataset/DBII
+      - dataset/NIST
     embeddings_path: classifier/save_models/embeddings.pth
 
   output:

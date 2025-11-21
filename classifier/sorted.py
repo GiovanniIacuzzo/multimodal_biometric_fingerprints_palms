@@ -11,19 +11,32 @@ CONFIG_SORTED = load_config().sorted
 # ======================
 # UTILITY
 # ======================
-def safe_join_dataset(dataset_root: Path, csv_path_str: str) -> Path:
-    """Risoluzione robusta del path immagini (anche in caso di duplicazioni nel CSV)."""
+def safe_join_dataset(dataset_roots, csv_path_str: str) -> Path:
+    """Trova un file cercandolo dentro tutti i dataset root."""
     p = Path(csv_path_str)
+
+    # 1. Se path assoluto valido → usalo
     if p.is_absolute() and p.exists():
         return p
-    cand = dataset_root / p.name
-    if cand.exists():
-        return cand
+
+    # 2. Controllo diretto dentro ogni root
+    for root in dataset_roots:
+        cand = root / p.name
+        if cand.exists():
+            return cand
+
+    # 3. Path relativo esistente nella working dir
     if p.exists():
         return p
-    matches = list(dataset_root.rglob(p.name))
-    return matches[0] if matches else dataset_root / p.name
 
+    # 4. Cerca ricorsivamente in *tutti* i root
+    for root in dataset_roots:
+        matches = list(root.rglob(p.name))
+        if matches:
+            return matches[0]
+
+    # 5. Fallback (per segnalare mancante)
+    return dataset_roots[0] / p.name
 
 def copy_files_to_clusters(rows, dataset_root: Path, out_dir: Path, copy_mode=True):
     clusters = defaultdict(list)
@@ -33,7 +46,13 @@ def copy_files_to_clusters(rows, dataset_root: Path, out_dir: Path, copy_mode=Tr
         csv_path = r.get("path", "") or ""
         file_id = r.get("global_class", "")
         cluster = int(r.get("cluster_label", -1))
-        src = safe_join_dataset(dataset_root, csv_path) if csv_path else dataset_root / fname
+        if csv_path:
+            src = safe_join_dataset(dataset_root, csv_path)
+        else:
+            # prova in tutte le root
+            candidates = [root / fname for root in dataset_root]
+            src = next((c for c in candidates if c.exists()), None)
+
         if not src.exists():
             missing.append(str(src))
             clusters[cluster].append((fname, None, file_id))
@@ -111,7 +130,11 @@ def compute_embedding_metrics(embeddings, filenames, clusters, out_dir):
 # ======================
 def main():
     csv_path = Path(CONFIG_SORTED.input.csv_path)
-    dataset_root = Path(CONFIG_SORTED.input.dataset_root)
+    ds_root_cfg = CONFIG_SORTED.input.dataset_root
+    if isinstance(ds_root_cfg, list):
+        dataset_root = [Path(d) for d in ds_root_cfg]
+    else:
+        dataset_root = [Path(ds_root_cfg)]
     out_dir = Path(CONFIG_SORTED.output.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

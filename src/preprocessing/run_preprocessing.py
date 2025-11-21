@@ -11,7 +11,6 @@ import logging
 
 from config import config_fingerprint
 from src.preprocessing.fingerprint_preprocess import preprocess_fingerprint
-from src.db.database import save_image_record, ensure_subject
 
 # ====================================================
 # LOGGING SETUP
@@ -72,16 +71,20 @@ def save_debug_images(results: dict, debug_base: str, base_name: str):
 def run_preprocessing(
     input_dir: str = config_fingerprint.DATASET_DIR,
     output_dir: str = config_fingerprint.PROCESSED_DIR,
-    debug: bool = True,
+    debug: bool = False,
     small_subset: bool = False,
     max_workers: int = 4
 ):
     console_step("Inizio Preprocessing Impronte")
 
     # --- Scansione immagini ---
-    image_files = [os.path.join(root, f)
-                   for root, _, files in os.walk(input_dir)
-                   for f in files if f.lower().endswith(('.jpg', '.png', '.jpeg'))]
+    VALID_EXTS = ('.jpg', '.jpeg', '.png', '.bmp')
+
+    image_files = [
+        os.path.join(root, f)
+        for root, _, files in os.walk(input_dir)
+        for f in files if f.lower().endswith(VALID_EXTS)
+    ]
 
     if not image_files:
         logging.error(f"Nessuna immagine trovata in {input_dir}")
@@ -137,22 +140,6 @@ def run_preprocessing(
             if debug and debug_base:
                 save_debug_images(results, debug_base, base_name)
 
-            # Database
-            subject_id = None
-            if "_" in base_name:
-                subject_code = base_name.split("_")[0]
-                subject_id = ensure_subject(subject_code)
-
-            image_id = save_image_record(
-                subject_id=subject_id,
-                filename=f"{base_name}.jpg",
-                path_original=img_path,
-                path_enhanced=enhanced_path,
-                path_skeleton=skeleton_path,
-                orientation_mean=float(np.mean(results["orientation_map"])) if "orientation_map" in results else None,
-                preprocessing_time=elapsed
-            )
-
             logging.info(f"✔ Processata: {file_name} ({elapsed:.2f}s)")
             return image_id, file_name
 
@@ -188,7 +175,4 @@ if __name__ == "__main__":
 
     run_preprocessing(
         input_dir=args.input,
-        output_dir=args.output,
-        debug=not args.no_debug,
-        small_subset=args.small
-    )
+        output_dir=args.output)

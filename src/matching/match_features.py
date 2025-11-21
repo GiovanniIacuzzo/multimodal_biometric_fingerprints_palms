@@ -4,7 +4,6 @@ import logging
 from typing import Dict, List
 import numpy as np
 import yaml
-from colorama import Fore, Style
 
 from src.matching.FRR import compute_frr
 from src.matching.FAR import compute_far
@@ -89,13 +88,6 @@ def main(config_path="config/config_matching.yml"):
 
     # Parametri matching ottimizzati
     minutiae_base       = cfg.get("minutiae_base", "dataset/processed/minutiae")
-    dist_threshold      = cfg.get("dist_threshold", 22.0)
-    orient_thresh_deg   = cfg.get("orient_thresh_deg", 22.0)
-    use_type            = cfg.get("use_type", True)
-    ransac_iter         = cfg.get("ransac_iter", 800)
-    min_inliers         = cfg.get("min_inliers", 7)
-    match_threshold     = cfg.get("match_threshold", 0.42)
-    max_workers         = cfg.get("max_workers", 8)
 
     # Determinismo opzionale
     if cfg.get("deterministic", True):
@@ -117,15 +109,13 @@ def main(config_path="config/config_matching.yml"):
     # ----------------------------------------------
     console_step("Calcolo FRR")
 
-    frr, genuine_scores = compute_frr(
+    genuine_scores = compute_frr(
         dataset,
-        dist_threshold,
-        orient_thresh_deg,
-        use_type,
-        ransac_iter,
-        min_inliers,
-        match_threshold,
-        max_workers
+        dist_thresh=25,
+        orient_thresh_deg=20,
+        use_type=True,
+        ransac_iter=300,
+        min_inliers=6,
     )
 
     # ----------------------------------------------
@@ -133,38 +123,25 @@ def main(config_path="config/config_matching.yml"):
     # ----------------------------------------------
     console_step("Calcolo FAR")
 
-    far, impostor_scores = compute_far(
+    impostor_scores = compute_far(
         dataset,
-        dist_threshold,
-        orient_thresh_deg,
-        use_type,
-        ransac_iter,
-        min_inliers,
-        match_threshold,
-        max_workers
+        dist_thresh=25,
+        orient_thresh_deg=20,
+        use_type=True,
+        ransac_iter=300,
+        min_inliers=6,
     )
 
     # ----------------------------------------------
     # Risultati Matching
     # ----------------------------------------------
     console_step("Matching Completato")
-
-    print(f"{Fore.CYAN}✨ FRR = {frr:.4f}, FAR = {far:.4f} ✨{Style.RESET_ALL}")
-    logging.info(f"Risultati Matching → FRR={frr:.4f}, FAR={far:.4f}")
-
     # ----------------------------------------------
     # ROC Curve
     # ----------------------------------------------
     console_step("Generazione ROC Curve")
 
-    fpr_list, tpr_list, auc, eer, eer_threshold = plot_roc(
-        genuine_scores,
-        impostor_scores,
-        save_path="data/metadata/ROC_curve.png"
-    )
-
-    print(f"{Fore.GREEN}ROC AUC = {auc:.4f}{Style.RESET_ALL}")
-    logging.info(f"ROC Curve generata con AUC={auc:.4f}")
+    plot_roc(genuine_scores, impostor_scores)
 
 
 # ------------------------------------------------------------

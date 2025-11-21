@@ -1,8 +1,7 @@
 from tqdm import tqdm
 from src.matching.match import match_minutiae_pair
-from src.matching.utils import console_step
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from colorama import Fore, Style
+from concurrent.futures import ThreadPoolExecutor
+from itertools import combinations
 import logging
 import numpy as np
 import os
@@ -64,49 +63,42 @@ def frr_worker(args):
 # ----------------------------
 # Compute FRR
 # ----------------------------
-def compute_frr(dataset, dist_thresh, orient_thresh_deg, use_type,
-                ransac_iter, min_inliers, match_threshold, max_workers=None):
+def compute_frr(dataset,
+                dist_thresh,
+                orient_thresh_deg,
+                use_type,
+                ransac_iter,
+                min_inliers,
+                stop_inlier_ratio=0.15,
+                max_workers=1):
 
-    console_step("Calcolo FRR")
-    tasks = [
-        (user_id, samples, dist_thresh, orient_thresh_deg, use_type, ransac_iter, min_inliers)
-        for user_id, samples in dataset.items()
-    ]
+    tasks = []
+    for user_id, samples in dataset.items():
+        if len(samples) < 2:
+            continue
+        # tutte le coppie dello stesso utente
+        for a, b in combinations(samples, 2):
+            tasks.append((a, b))
 
-    all_genuine_scores = []
+    genuine_scores = []
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for scores in tqdm(executor.map(frr_worker, tasks), total=len(tasks),
-                           desc="FRR Matching", ncols=90):
-            all_genuine_scores.extend(scores)
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = []
+        for a, b in tasks:
+            futures.append(ex.submit(
+                match_minutiae_pair,
+                a, b,
+                dist_thresh=dist_thresh,
+                orient_thresh_deg=orient_thresh_deg,
+                use_type=use_type,
+                ransac_iter=ransac_iter,
+                min_inliers=min_inliers,
+                stop_inlier_ratio=stop_inlier_ratio,
+                cross_check=True
+            ))
 
-    # ============================
-    # LOG GLOBALI DIAGNOSTICI
-    # ============================
-    if all_genuine_scores:
-        zeros = sum(s == 0 for s in all_genuine_scores)
-        ones = sum(s == 1 for s in all_genuine_scores)
-        nans = sum(np.isnan(s) for s in all_genuine_scores)
+        for f in tqdm(futures, desc="FRR", ncols=90):
+            res = f.result()
+            genuine_scores.append(float(res["final_score"]))
 
-        logger.info(f"[GLOBAL] Numero totale confronti: {len(all_genuine_scores)}")
-        logger.info(f"[GLOBAL] Zero scores: {zeros}, One scores: {ones}, NaN scores: {nans}")
-        logger.info(f"[GLOBAL] min={np.min(all_genuine_scores):.4f}, "
-                    f"max={np.max(all_genuine_scores):.4f}, "
-                    f"mean={np.mean(all_genuine_scores):.4f}, "
-                    f"std={np.std(all_genuine_scores):.4f}")
-        logger.info("[GLOBAL] 20 punteggi più bassi: " + str(sorted(all_genuine_scores)[:20]))
-        logger.info("[GLOBAL] 20 punteggi più alti: " + str(sorted(all_genuine_scores)[-20:]))
-
-        # backup print se logging non funziona
-        if DEBUG:
-            print(f"[DEBUG] {len(all_genuine_scores)} confronti, min={np.min(all_genuine_scores):.4f}, max={np.max(all_genuine_scores):.4f}")
-
-    # FRR vero
-    total_comparisons = len(all_genuine_scores)
-    false_rejects = sum(s < match_threshold for s in all_genuine_scores)
-    frr = false_rejects / total_comparisons if total_comparisons else 0.0
-
-    print(f"{Fore.GREEN}✔ FRR calcolato: {frr:.4f}{Style.RESET_ALL}")
-    logger.info(f"FRR: {frr:.4f}, threshold={match_threshold}")
-
-    return frr, all_genuine_scores
+    return genuine_scores
