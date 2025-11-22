@@ -9,44 +9,116 @@
 
 ---
 
-## Introduzione
+# Introduzione
 
-Il presente progetto implementa una **pipeline modulare per l’analisi e il riconoscimento di impronte digitali ad alta risoluzione**, basata su approcci di machine learning avanzati e tecniche di elaborazione delle immagini.  
-L’obiettivo è costruire un framework **robusto, riproducibile e sperimentalmente verificabile**, capace di gestire le criticità più comuni nella biometria delle impronte:
+Questo progetto implementa una **pipeline modulare e completamente automatizzata per l’analisi, il preprocessing e il riconoscimento di impronte digitali ad alta risoluzione**.  
+L’intero framework è stato progettato per supportare sperimentazioni riproducibili e scalabili nel campo della biometria, integrando:
 
-- Variabilità del contrasto e della luminosità  
-- Presenza di regioni di background non informative  
-- Rumore strutturale e discontinuità delle ridge
+- tecniche avanzate di **image enhancement**,  
+- estrazione accurata delle **minuzie**,  
+- matching basato su invarianti geometriche,  
+- gestione multi-dataset con parsing intelligente dei filename,  
+- strumenti di valutazione (FAR, FRR, ROC) a livello sperimentale.
 
-Tutte le elaborazioni sono realizzate in **Python**, utilizzando librerie scientifiche come `NumPy`, `SciPy`, `OpenCV` e `scikit-image`. La pipeline garantisce **tracciabilità completa delle trasformazioni**, permettendo un’analisi quantitativa e qualitativa approfondita.
+### Obiettivi principali del framework
+
+- **Robustezza**: resistenza a variazioni di pressione, rotazione, contrasto, rumore e parziale sovrapposizione delle ridge.  
+- **Modularità**: ogni fase della pipeline (preprocessing → estrazione → matching → valutazione) può essere sostituita o estesa.  
+- **Riproducibilità**: ogni trasformazione è tracciata e configurabile.  
+- **Multi-dataset**: supporto integrato a dataset con formati eterogenei e convenzioni diverse.
+
+### Tecnologie utilizzate
+
+- **Python 3.x**  
+- Librerie scientifiche: `NumPy`, `SciPy`, `OpenCV`, `scikit-image`  
+- Machine learning e KD-Tree: `scikit-learn`  
+- Analisi e catalogazione dataset: `pandas`, `tqdm`  
+- Logging, benchmarking e strumenti diagnostici integrati.
 
 ---
 
-## Dataset: PolyU High Resolution Fingerprint Database II (PolyU HRF DBII)
+# Dataset utilizzati
 
-La sperimentazione si basa sul dataset **PolyU HRF DBII**, un riferimento consolidato nella ricerca sull’elaborazione di impronte digitali ad alta risoluzione.
+La pipeline supporta e normalizza **qualunque dataset di impronte digitali con formato leggibile**, tramite un sistema di riconoscimento dei filename basato su espressioni regolari.  
+In questo progetto sono stati impiegati due dataset principali:
+
+---
+
+## 📌 PolyU High Resolution Fingerprint Database II (PolyU HRF DBII)
+
+Questo dataset rappresenta un riferimento consolidato nella ricerca sulle impronte digitali ad alta risoluzione.
 
 ### Caratteristiche principali
 
 | Proprietà | Valore |
 |------------|--------|
-| Origine | Hong Kong Polytechnic University, Department of Computing |
-| Nome completo | High Resolution Fingerprint Database II (DBII) |
-| Numero soggetti | 148 |
+| Origine | Hong Kong Polytechnic University |
+| Nome | High Resolution Fingerprint Database II (DBII) |
+| Soggetti | 148 |
 | Immagini per soggetto | 10 |
 | Totale immagini | 1480 |
 | Risoluzione | 1200 dpi (≈ 21 µm/pixel) |
-| Formato | jpg, 8-bit grayscale |
-| Dimensioni tipiche | 240×320 o superiori |
+| Formato | JPG – 8-bit grayscale |
+| Dimensioni | ~240×320 px |
 
 > [!NOTE]  
-> Ogni soggetto è rappresentato da 10 campioni acquisiti in sessioni differenti, includendo variazioni di pressione, orientamento e parziale sovrapposizione. Questo rende il dataset ideale per testare la robustezza dei metodi di enhancement e valutare la consistenza topologica delle ridge.
+> Ogni soggetto dispone di 10 acquisizioni indipendenti, con variazioni di rotazione, pressione, area acquisita e condizioni di contatto.  
+> Questo lo rende ideale per valutare la stabilità delle minuzie e l’affidabilità del matching.
 
+---
+
+## 📌 NIST Fingerprint
+
+Oltre al PolyU HRF, il progetto integra anche delle impronte **NIST**, caratterizzate da elevate difficoltà strutturali:
+
+- impronte estremamente degradate,  
+- artefatti e zone sature,  
+- ridotto contrasto,  
+- geometrie incomplete o danneggiate,
+- acquisizione grossolana non ottima.
+
+### Caratteristiche riconosciute
+
+| Proprietà | Valore |
+|-----------|--------|
+| Nome pattern | `Fxxxx_nn.bmp` |
+| Esempio | `F0001_01.bmp` |
+| Parsing automatico | Sì (subject, finger, session=1) |
+| Complessità | Molto alta |
+| Formato | BMP, 8-bit grayscale |
+
+> [!TIP]  
+> Le impronte NIST sono utilizzate principalmente per **stress-test** della pipeline, poiché contengono casi estremi che mettono in difficoltà i metodi convenzionali.
+
+---
+
+# Sistema di Catalogazione Dataset
+
+Per uniformare i dataset PolyU e NIST, la pipeline utilizza il modulo:
+```bash
+src/catalog/catalog.py
+```
+Questo componente:
+1. **scansiona automaticamente tutti i cluster** (cartelle `cluster_*`);
+2. **riconosce automaticamente il formato del filename** tramite tre regex:
+   - `3_1_1.jpg` → formato standard  
+   - `F0003_10.bmp` → formato NIST  
+   - `S1387_02.bmp` → formato "S-pattern"  
+3. **estrae i metadati**:  
+   - `subject_id`  
+   - `finger_id`  
+   - `session_id`  
+   - dimensioni dell'immagine  
+   - cluster di appartenenza  
+4. **genera un catalogo CSV** ordinato e pronto per tutte le successive fasi della pipeline.
+
+>[!NOTE]
+>L’unificazione dei dataset tramite questa catalogazione è fondamentale per permettere un matching affidabile e un calcolo coerente delle metriche (FRR / FAR / ROC).
 ---
 
 ## Estrazione e Clustering delle Feature
 
-Una volta pre-elaborate le immagini, ogni impronta viene rappresentata tramite un **embedding vettoriale** ottenuto con modelli di **Self-Supervised Learning (SSL)**.  
+Prima di passare all'elaboraizione delle immagini, ogni impronta viene rappresentata tramite un **embedding vettoriale** ottenuto con modelli di **Self-Supervised Learning (SSL)**.  
 Questi embeddings catturano le caratteristiche distintive delle ridge e permettono un confronto affidabile tra campioni.
 
 ### Aggregazione degli embeddings
@@ -95,8 +167,8 @@ La pipeline è articolata in fasi strutturate per garantire **precisione e robus
 
 Le immagini vengono preparate tramite operazioni di preprocessing:
 
-- Ridimensionamento e normalizzazione  
-- Rimozione del rumore tramite filtri e smoothing  
+- Ridimensionamento e normalizzazione
+- Rimozione del rumore tramite filtri e smoothing
 - Eventuale binarizzazione preliminare per evidenziare dettagli delle ridge
 
 ### Segmentazione con Deep Learning
@@ -122,25 +194,49 @@ Dalla segmentazione si estraggono:
 
 ### Matching e valutazione delle prestazioni
 
-Il matching confronta le feature estratte tra coppie di campioni per determinare corrispondenze:
+Il sistema utilizza un modello di matching basato su **RANSAC** e **trasformazioni rigide**, progettato per confrontare strutture di minutiae in modo robusto contro rotazioni, traslazioni e distorsioni locali.
 
 #### Matching tra campioni
 
-- **Cosine Similarity**: valori vicini a 1 indicano alta somiglianza  
-- **Euclidean Distance**: distanza bassa indica corrispondenza
+Il confronto tra due impronte avviene in tre fasi:
+
+1. **Selezione preliminare delle corrispondenze**
+   - ciascuna minutia viene confrontata con le vicine (KDTree)
+   - vengono applicati vincoli su:
+     - distanza locale
+     - differenza di orientazione
+     - tipo della minutia (ending/bifurcation)
+
+2. **Stima della trasformazione (RANSAC)**
+   - si cerca la rotazione + traslazione che massimizza gli *inliers*
+   - le minutiae vengono allineate nel sistema di riferimento comune
+
+3. **Valutazione delle corrispondenze**
+   - ogni coppia minutia–minutia allineata riceve un **peso**
+     basato su:
+     - coerenza geometrica
+     - differenza angolare
+     - tipo della minutia
+     - qualità locale
+   - lo **score finale** è normalizzato in $([0, 1])$:
+     - **1 → impronte altamente corrispondenti**
+     - **0 → quasi certamente impostore**
 
 #### Threshold e metriche
 
-- Threshold basso → aumento dei falsi rifiuti (FRR)  
-- Threshold alto → aumento dei falsi accettamenti (FAR)
+Il sistema calcola le metriche biometriche standard:
 
-#### Matching basato su cluster
+- **FRR(t)** – False Reject Rate: genuine con score < t  
+- **FAR(t)** – False Accept Rate: impostor con score ≥ t  
 
-- Campioni nello stesso cluster → maggiore affidabilità  
-- Campioni in cluster diversi → bassa probabilità di match
+Effetto del threshold:
+
+- Threshold basso → FRR più alto (sistema più severo)  
+- Threshold alto → FAR più alto (sistema più permissivo)  
 
 > [!NOTE]  
-> Il flusso garantisce un percorso chiaro dalla preparazione dell’immagine fino alla valutazione dei risultati, combinando rappresentazione dei dati e struttura globale dei cluster per ottimizzare precisione e robustezza.
+> Questo approccio combina robustezza geometrica e pesatura delle minutiae,
+> offrendo un matching stabile anche in presenza di rumore, rotazioni e pressioni non uniformi.
 
 ## Struttura PipeLine
   
@@ -154,6 +250,7 @@ input → Normalizzazione → Segmentazione → Binarizzazione → Thinning → 
 
 ```bash
 ├── 📁 classifier
+│   │
 │   ├── 📁 dataset2
 │   │   ├── 🐍 dataset.py
 │   │   └── 🐍 preprocessing.py
@@ -184,21 +281,10 @@ input → Normalizzazione → Segmentazione → Binarizzazione → Thinning → 
 │   ├── ⚙️ config_segmentation.yml
 │   └── ⚙️ environment.yml
 │
-├── 📁 scripts
-│   └── 🐍 run_pipeline.py
-│
 ├── 📁 src
 │   ├── 📁 catalog
 │   │   ├── 🐍 __init__.py
 │   │   └── 🐍 prepare_catalog.py
-│   │
-│   ├── 📁 db
-│   │   ├── 🐍 database.py
-│   │   └── 📄 schema.sql
-│   │
-│   ├── 📁 evaluation
-│   │   ├── 🐍 __init__.py
-│   │   └── 🐍 evaluate_performance.py
 │   │
 │   ├── 📁 features
 │   │   ├── 🐍 __init__.py
@@ -206,11 +292,15 @@ input → Normalizzazione → Segmentazione → Binarizzazione → Thinning → 
 │   │   └── 🐍 post_processing.py
 │   │
 │   ├── 📁 matching
+│   │   ├── 🐍 FAR.py
+│   │   ├── 🐍 FRR.py
+│   │   ├── 🐍 ROC.py
 │   │   ├── 🐍 __init__.py
+│   │   ├── 🐍 match.py
 │   │   ├── 🐍 match_features.py
-│   │   └── 🐍 sweep.py
-│   │
+│   │   └── 🐍 utils.py
 │   └── 📁 preprocessing
+│       │
 │       ├── 📁 segmentation
 │       │   ├── 🐍 __init__.py
 │       │   ├── 🐍 dataset.py
