@@ -105,7 +105,10 @@ def run_preprocessing(
         os.makedirs(debug_root, exist_ok=True)
 
     # --- Funzione per processare una singola immagine ---
-    def process_single_image(img_path: str):
+    def process_single_image(img_path: str, idx: int):
+        """
+        idx: indice dell'immagine nella lista, usato come image_id
+        """
         file_name = os.path.basename(img_path)
         base_name = os.path.splitext(file_name)[0]
 
@@ -132,7 +135,6 @@ def run_preprocessing(
             cv2.imwrite(enhanced_path, enhanced_img)
 
             skeleton = results.get("skeleton")
-            skeleton_path = None
             if skeleton is not None:
                 skeleton_path = os.path.join(enhanced_subdir, f"{base_name}_skeleton.jpg")
                 cv2.imwrite(skeleton_path, skeleton)
@@ -141,17 +143,19 @@ def run_preprocessing(
                 save_debug_images(results, debug_base, base_name)
 
             logging.info(f"✔ Processata: {file_name} ({elapsed:.2f}s)")
-            return image_id, file_name
+            return idx, file_name
 
         except Exception as e:
             logging.error(f"Errore nel preprocessing di {file_name}: {e}")
             traceback.print_exc()
             return None, file_name
 
-    # --- Parallel processing ---
     console_step("Esecuzione Preprocessing in parallelo")
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(process_single_image, f): f for f in image_files}
+        futures = {
+            executor.submit(process_single_image, f, idx): f
+            for idx, f in enumerate(image_files)
+        }
         for future in tqdm(as_completed(futures), total=len(futures), desc="Preprocessing", ncols=90):
             image_id, file_name = future.result()
             if image_id is None:

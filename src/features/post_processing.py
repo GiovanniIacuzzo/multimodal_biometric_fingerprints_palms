@@ -79,7 +79,7 @@ def postprocess_minutiae(minutiae: List[Dict],
     coh_th = params.get("coherence_threshold", 0.2)
     min_dist = params.get("min_distance", 8.0)
     margin = params.get("margin", 30)
-    max_m = params.get("max_minutiae", 80)
+    max_m = params.get("max_minutiae", 60)
     patch_r = params.get("patch_radius", 15)
 
     sk_bin = (skel > 0).astype(np.uint8)

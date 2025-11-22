@@ -1,45 +1,44 @@
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
-def plot_roc(genuine_scores, impostor_scores, title="ROC Curve", n_thr=1000):
+def plot_roc(thresholds, far_values, frr_values, title="ROC (FAR vs FRR)"):
 
-    scores = np.concatenate([genuine_scores, impostor_scores])
+    thresholds = np.array(thresholds)
+    far = np.array(far_values)
+    frr = np.array(frr_values)
 
-    thr_min = scores.min() - 1e-6
-    thr_max = scores.max() + 1e-6
-    thresholds = np.linspace(thr_min, thr_max, n_thr)
+    # Ordinare i punti per FAR crescente
+    order = np.argsort(far)
+    far = far[order]
+    frr = frr[order]
 
-    genuine = np.array(genuine_scores)
-    impostor = np.array(impostor_scores)
-
-    tpr = []
-    fpr = []
-
-    for t in thresholds:
-        tpr.append(np.mean(genuine >= t))   # True Positive Rate
-        fpr.append(np.mean(impostor >= t))  # False Positive Rate
-
-    tpr = np.array(tpr)
-    fpr = np.array(fpr)
-
-    # ---- EER ----
-    diff = np.abs(fpr - (1 - tpr))
-    eer_idx = diff.argmin()
-    eer = fpr[eer_idx]
-
-    # ---- AUC ----
-    auc = np.trapz(tpr[::-1], fpr[::-1])
-
-    # ---- Plot ----
+    # Plot
     plt.figure(figsize=(7, 6))
-    plt.plot(fpr, tpr)
-    plt.plot([0, 1], [0, 1], '--')
-    plt.scatter([fpr[eer_idx]], [tpr[eer_idx]], marker='o', color='red')
-    plt.title(f"{title}\nAUC={auc:.4f}  EER={eer:.4f}")
-    plt.xlabel("False Positive Rate")
-    plt.ylabel("True Positive Rate")
+    plt.plot(far, frr, marker='o', linewidth=2)
+    plt.xlabel("FAR (False Accept Rate)")
+    plt.ylabel("FRR (False Reject Rate)")
+    plt.title(title)
     plt.grid(True)
     plt.show()
 
-    print("AUC:", auc)
-    print("EER:", eer)
+if __name__ == "__main__":
+    thresholds = np.linspace(0, 1, 50)
+    frr_values = [
+        1.000, 0.986, 0.804, 0.446, 0.250, 0.169, 0.128, 0.108, 0.095, 0.088,
+        0.061, 0.047, 0.047, 0.027, 0.014, 0.007, 0.007, 0.007, 0.007, 0.000,
+        0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+        0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+        0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
+    ]
+
+    far_values = [
+        0.001, 0.002, 0.219, 0.738, 0.941, 0.987, 0.998, 0.999, 1.000, 1.000,
+        1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000,
+        1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000,
+        1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000,
+        1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000, 1.000
+    ]
+
+    plot_roc(thresholds, far_values=far_values, frr_values=frr_values, title="ROC (FAR vs FRR)")
+
+    print("Curva ROC generata con successo...")

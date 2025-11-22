@@ -72,6 +72,7 @@ def extract_minutiae(skel: np.ndarray) -> List[Dict]:
 # PROCESS SINGLE IMAGE
 # ====================================================
 def process_image(filename, cluster_dir, out_dir, params):
+    # Process ONLY skeleton images
     if not filename.endswith("_skeleton.jpg"):
         return
 
@@ -93,9 +94,7 @@ def process_image(filename, cluster_dir, out_dir, params):
             logging.error(f"postprocess_minutiae error on {filename}: {e}")
             refined = []
 
-        tproc = time.time() - t0
-
-        # ---- Save visualization ----
+        # Save visualization
         vis = cv2.cvtColor((skel > 127).astype(np.uint8) * 255, cv2.COLOR_GRAY2BGR)
         for m in refined:
             color = (0, 0, 255) if m["type"] == "ending" else (0, 255, 0)
@@ -105,9 +104,6 @@ def process_image(filename, cluster_dir, out_dir, params):
         with open(os.path.join(out_dir, f"{sample_name}_minutiae.json"), "w") as f:
             json.dump(refined, f, indent=2)
 
-        # print(f"{Fore.GREEN}✔{Style.RESET_ALL} {filename} processata ({tproc:.2f}s)")
-        # logging.info(f"Processed {filename} ({tproc:.2f}s)")
-
     except Exception as e:
         logging.error(f"Errore elaborando {filename}: {e}")
 
@@ -116,8 +112,13 @@ def process_image(filename, cluster_dir, out_dir, params):
 # ====================================================
 def process_cluster_dir(cluster_dir: str, output_base: str, params=None, max_workers=None):
 
-    jpgs = [f for f in os.listdir(cluster_dir) if f.lower().endswith(".jpg")]
-    if not jpgs:
+    # Filter ONLY skeleton images
+    skeleton_files = [
+        f for f in os.listdir(cluster_dir)
+        if f.lower().endswith("_skeleton.jpg")
+    ]
+
+    if not skeleton_files:
         return
 
     cluster_name = os.path.basename(cluster_dir)
@@ -128,8 +129,8 @@ def process_cluster_dir(cluster_dir: str, output_base: str, params=None, max_wor
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         list(tqdm(
-            executor.map(lambda f: process_image(f, cluster_dir, out_dir, params), jpgs),
-            total=len(jpgs),
+            executor.map(lambda f: process_image(f, cluster_dir, out_dir, params), skeleton_files),
+            total=len(skeleton_files),
             desc="Minutiae",
             ncols=90
         ))

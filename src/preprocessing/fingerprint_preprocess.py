@@ -17,7 +17,8 @@ def normalize_image(img: np.ndarray) -> np.ndarray:
     else:
         f = (img - img.min()) / (img.max() - img.min() + 1e-8)
 
-    f = (f - np.percentile(f, 1)) / (np.percentile(f, 99) - np.percentile(f, 1) + 1e-12)
+    f = (f - np.percentile(f, 0.5)) / (np.percentile(f, 99.5) - np.percentile(f, 0.5) + 1e-12)
+
     f = np.clip(f, 0.0, 1.0)
     img_u8 = (f * 255).astype(np.uint8)
 
@@ -32,8 +33,9 @@ def normalize_image(img: np.ndarray) -> np.ndarray:
 # ================================================
 def denoise_image(img: np.ndarray) -> np.ndarray:
     """Riduzione rumore bilaterale + gaussian blur per preservare creste."""
-    bilateral = cv2.bilateralFilter(img, d=7, sigmaColor=60, sigmaSpace=60)
-    return cv2.GaussianBlur(bilateral, (3, 3), 0.6)
+    denoised = cv2.fastNlMeansDenoising(img, None, h=10, templateWindowSize=7, searchWindowSize=21)
+
+    return cv2.GaussianBlur(denoised, (3, 3), 0.6)
 
 # ================================================
 # BINARIZATION (Sauvola + Otsu refinements)
@@ -55,7 +57,7 @@ def binarize(img: np.ndarray) -> np.ndarray:
     binary = img_eq < sauv_map
 
     # Refinement Otsu su patch
-    patch = 48
+    patch = 32
     h, w = img_eq.shape
     for i in range(0, h, patch):
         for j in range(0, w, patch):

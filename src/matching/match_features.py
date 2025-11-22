@@ -8,8 +8,7 @@ import yaml
 from src.matching.FRR import compute_frr
 from src.matching.FAR import compute_far
 from src.matching.ROC import plot_roc
-from src.matching.utils import console_step
-
+from src.matching.utils import console_step, report_scores, evaluate_frr_across_thresholds, evaluate_far_across_thresholds
 
 # ------------------------------------------------------------
 # Setup Logging
@@ -29,7 +28,6 @@ def load_dataset(minutiae_base: str, max_per_user: int = None) -> Dict[str, List
     dataset = {}
     files_per_user = {}
 
-    # Trova tutti i JSON
     for root, dirs, files in os.walk(minutiae_base):
         for f in files:
             if f.endswith("_minutiae.json"):
@@ -37,7 +35,6 @@ def load_dataset(minutiae_base: str, max_per_user: int = None) -> Dict[str, List
                 full_path = os.path.join(root, f)
                 files_per_user.setdefault(user_id, []).append(full_path)
 
-    # Caricamento minuzie
     for user_id, paths in files_per_user.items():
         paths_sorted = sorted(paths)
 
@@ -53,10 +50,7 @@ def load_dataset(minutiae_base: str, max_per_user: int = None) -> Dict[str, List
 
                 arr = []
                 for m in minutiae:
-                    # Tipo: ending=0, bifurcation=1
                     t = 0 if m.get("type", "ending") == "ending" else 1
-
-                    # Ordine campi mantenuto fisso
                     arr.append([
                         float(m["x"]),
                         float(m["y"]),
@@ -75,74 +69,92 @@ def load_dataset(minutiae_base: str, max_per_user: int = None) -> Dict[str, List
         dataset[user_id] = user_minutiae
 
     return dataset
-
-
 # ------------------------------------------------------------
 # MAIN
 # ------------------------------------------------------------
-def main(config_path="config/config_matching.yml"):
+def main(config_path="config/config_matching.yml", demo=False):
     console_step("Caricamento Configurazione")
 
     with open(config_path, "r") as f:
         cfg = yaml.safe_load(f)
 
-    # Parametri matching ottimizzati
-    minutiae_base       = cfg.get("minutiae_base", "dataset/processed/minutiae")
+    minutiae_base = cfg.get("minutiae_base", "dataset/processed/minutiae")
 
-    # Determinismo opzionale
     if cfg.get("deterministic", True):
         np.random.seed(42)
         logging.info("Deterministic mode: ON (seed=42)")
 
     # ----------------------------------------------
+    # DEMO MODE SETTINGS
+    # ----------------------------------------------
+    if demo:
+        print("\n⚡ DEMO MODE ATTIVO → pipeline ultrarapida ⚡\n")
+
+        demo_settings = {
+            "max_per_user": 2,          # invece di 5–10
+            "frr_ransac": 200,          # invece di 300
+            "far_ransac": 200,          # invece di 300
+            "frr_min_inliers": 3,
+            "far_min_inliers": 4,
+            "num_points": 30            # invece di 50
+        }
+    else:
+        demo_settings = {
+            "max_per_user": 2,
+            "frr_ransac": 300,
+            "far_ransac": 300,
+            "frr_min_inliers": 6,
+            "far_min_inliers": 12,
+            "num_points": 50
+        }
+
+    # ----------------------------------------------
     # Caricamento dataset
     # ----------------------------------------------
     console_step("Caricamento Dataset")
-    print("Caricamento dataset...")
-    dataset = load_dataset(minutiae_base, max_per_user=2)
-
+    dataset = load_dataset(minutiae_base, max_per_user=demo_settings["max_per_user"])
     print(f"Utenti caricati: {len(dataset)}")
-    logging.info(f"Dataset caricato: {len(dataset)} utenti")
 
     # ----------------------------------------------
     # Calcolo FRR
     # ----------------------------------------------
     console_step("Calcolo FRR")
-
     genuine_scores = compute_frr(
         dataset,
         dist_thresh=25,
         orient_thresh_deg=20,
         use_type=True,
-        ransac_iter=300,
-        min_inliers=6,
+        ransac_iter=demo_settings["frr_ransac"],
+        min_inliers=demo_settings["frr_min_inliers"],
     )
+
+    report_scores("REPORT FRR (Genuine Scores)", genuine_scores)
+    th_frr, frr = evaluate_frr_across_thresholds(genuine_scores, num_points=demo_settings["num_points"])
 
     # ----------------------------------------------
     # Calcolo FAR
     # ----------------------------------------------
     console_step("Calcolo FAR")
-
     impostor_scores = compute_far(
         dataset,
-        dist_thresh=25,
-        orient_thresh_deg=20,
+        dist_thresh=15,
+        orient_thresh_deg=10,
         use_type=True,
-        ransac_iter=300,
-        min_inliers=6,
+        ransac_iter=demo_settings["far_ransac"],
+        min_inliers=demo_settings["far_min_inliers"],
+        demo=demo
     )
 
-    # ----------------------------------------------
-    # Risultati Matching
-    # ----------------------------------------------
-    console_step("Matching Completato")
+    report_scores("REPORT FAR (Impostor Scores)", impostor_scores)
+    th_far, far = evaluate_far_across_thresholds(impostor_scores, num_points=demo_settings["num_points"])
+
     # ----------------------------------------------
     # ROC Curve
     # ----------------------------------------------
-    console_step("Generazione ROC Curve")
+    console_step("Generazione ROC")
+    plot_roc(th_far, far_values=far, frr_values=frr, title="ROC (FAR vs FRR)")
 
-    plot_roc(genuine_scores, impostor_scores)
-
+    print("\n✨ Matching completato ✨\n")
 
 # ------------------------------------------------------------
 # CLI
@@ -152,7 +164,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Fingerprint/Minutiae Matching")
     parser.add_argument("--config", type=str, default="config/config_matching.yml")
+    parser.add_argument("--demo", action="store_true", help="Esegui in modalità DEMO ultrarapida")
     args = parser.parse_args()
 
     console_step("Avvio Matching Minutiae")
-    main(config_path=args.config)
+    main(config_path=args.config, demo=args.demo)

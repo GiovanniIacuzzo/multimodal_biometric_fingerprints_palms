@@ -70,14 +70,22 @@ def compute_frr(dataset,
                 ransac_iter,
                 min_inliers,
                 stop_inlier_ratio=0.15,
-                max_workers=1):
+                max_workers=1,
+                demo=False):
 
     tasks = []
     for user_id, samples in dataset.items():
         if len(samples) < 2:
             continue
-        # tutte le coppie dello stesso utente
-        for a, b in combinations(samples, 2):
+
+        # tutte le coppie genuine
+        pairs = list(combinations(samples, 2))
+
+        # DEMO: limita drasticamente il numero di match
+        if demo:
+            pairs = pairs[:3]  # max 3 confronti per utente
+
+        for a, b in pairs:
             tasks.append((a, b))
 
     genuine_scores = []
@@ -91,8 +99,8 @@ def compute_frr(dataset,
                 dist_thresh=dist_thresh,
                 orient_thresh_deg=orient_thresh_deg,
                 use_type=use_type,
-                ransac_iter=ransac_iter,
-                min_inliers=min_inliers,
+                ransac_iter=ransac_iter if not demo else 50,
+                min_inliers=min_inliers if not demo else 3,
                 stop_inlier_ratio=stop_inlier_ratio,
                 cross_check=True
             ))
