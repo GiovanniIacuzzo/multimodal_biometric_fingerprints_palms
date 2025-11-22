@@ -8,4 +8,5 @@ labels.csv
 data/
 save_models/
 figures/
+logs/
 segmentation.pth

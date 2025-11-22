@@ -61,8 +61,11 @@ def match_with_transform(mins_a, mins_b, theta, t,
             continue
 
         # peso combinato robusto
-        spatial = math.exp(-(d**2) / (2 * (dist_thresh/2)**2))
-        orient_factor = math.exp(-(ang_err**2) / (2 * (orient_thresh/2)**2))
+        sigma_d = dist_thresh * 0.7
+        sigma_o = orient_thresh * 0.7
+
+        spatial = math.exp(-(d**2) / (2 * sigma_d**2))
+        orient_factor = math.exp(-(ang_err**2) / (2 * sigma_o**2))
 
         score = spatial * orient_factor * weights_a[ia] * weights_b[ib]
         inliers.append((ia, ib, float(score)))
@@ -81,7 +84,7 @@ def ransac_worker(args):
     # === EARLY REJECT 2: distribuzione troppo diversa (anti impostori)
     std_a = mins_a[:, :2].std(0)
     std_b = mins_b[:, :2].std(0)
-    if np.linalg.norm(std_a - std_b) > 20:
+    if np.linalg.norm(std_a - std_b) > 35:
         return {"score": 0.0, "inliers": []}
 
     idxsA = np.arange(mins_a.shape[0])
@@ -116,8 +119,10 @@ def ransac_worker(args):
     weighted = sum([c for (_,_,c) in inliers])
     possible = min(np.sum(wA), np.sum(wB))
 
-    # punizione quadratica (impostori → punteggio crolla)
-    score = (weighted / possible)**2
+    # punizione
+    score = weighted / (possible + 1e-6)
+    score = score**0.75   # compressione morbida
+    score = float(np.clip(score, 0, 1))
 
     return {"theta": theta, "t": t, "inliers": inliers, "score": float(score)}
 
@@ -195,9 +200,10 @@ def ransac_align_and_match_parallel(mins_a, mins_b,
     # === nuovo score severo
     weighted = sum([c for (_,_,c) in inliers])
     possible = min(np.sum(wA), np.sum(wB))
-    score = (weighted / possible)**2
+    score = weighted / (possible + 1e-6)
+    score = score**0.5
+    score = float(np.clip(score, 0, 1))
 
-    # === controllo geometrico finale (anti-impostori)
     if len(inliers) >= 8:
         Pa = mins_a[[i for (i,_,_) in inliers], :2]
         Pb = mins_b[[j for (_,j,_) in inliers], :2]
@@ -205,8 +211,7 @@ def ransac_align_and_match_parallel(mins_a, mins_b,
         dA = np.linalg.norm(Pa - Pa.mean(0), axis=1).mean()
         dB = np.linalg.norm(Pb - Pb.mean(0), axis=1).mean()
 
-        if abs(dA - dB) > 10:
-            # geometria incoerente → quasi sicuramente impostore
+        if abs(dA - dB) > 18:
             return {"score": 0.0, "inliers": []}
 
     return {"theta": theta, "t": t, "inliers": inliers, "score": float(score)}
@@ -250,7 +255,15 @@ def match_minutiae_pair(
         idx_b_to_a = treeA.query(B[:,:2], k=1)[1].ravel()
         inliers = [(i,j,s) for (i,j,s) in inliers if idx_b_to_a[j] == i]
 
-    final_score = float(np.clip(best.get("score", 0.0), 0.0, 1.0))
+    wA = np.array([compute_descriptor_weight(m) for m in A])
+    wB = np.array([compute_descriptor_weight(m) for m in B])
+
+    weighted = sum([s for (_,_,s) in inliers])
+    possible = min(np.sum(wA), np.sum(wB))
+
+    final_score = (weighted / (possible + 1e-6)) ** 0.25
+    final_score = float(np.clip(final_score, 0, 1))
+
     inlier_ratio = len(inliers) / max(1, min(len(A),len(B)))
 
     return {

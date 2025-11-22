@@ -19,7 +19,7 @@ def far_worker_batch(args):
                 min_inliers=min_inliers,
                 stop_inlier_ratio=stop_inlier_ratio,
                 cross_check=True,
-                thread_workers=1  # dentro ogni processo/thread non usiamo thread
+                thread_workers=1
             )
             batch_scores.append(float(res.get("final_score", 0.0)))
     return batch_scores

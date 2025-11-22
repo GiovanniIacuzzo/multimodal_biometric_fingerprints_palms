@@ -3,6 +3,7 @@ from src.matching.match import match_minutiae_pair
 from concurrent.futures import ThreadPoolExecutor
 from itertools import combinations
 import logging
+import csv
 import numpy as np
 import os
 
@@ -89,6 +90,17 @@ def compute_frr(dataset,
             tasks.append((a, b))
 
     genuine_scores = []
+    match_log = open("logs/genuine_match_stats.csv", "w", newline="")
+    writer = csv.writer(match_log)
+    writer.writerow([
+        "user_id", "idx1", "idx2",
+        "score",
+        "num_inliers",
+        "num_outliers",
+        "rotation_deg",
+        "translation_x",
+        "translation_y"
+    ])
 
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
         futures = []
@@ -107,6 +119,20 @@ def compute_frr(dataset,
 
         for f in tqdm(futures, desc="FRR", ncols=90):
             res = f.result()
-            genuine_scores.append(float(res["final_score"]))
+            score = float(res["final_score"])
+            genuine_scores.append(score)
 
+            writer.writerow([
+                res.get("user_id", "N/A"),
+                res.get("sample_a", -1),
+                res.get("sample_b", -1),
+                score,
+                res.get("inliers", 0),
+                res.get("outliers", 0),
+                res.get("rotation_deg", 0.0),
+                res.get("tx", 0.0),
+                res.get("ty", 0.0)
+            ])
+
+    match_log.close()
     return genuine_scores

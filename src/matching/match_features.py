@@ -8,7 +8,7 @@ import yaml
 from src.matching.FRR import compute_frr
 from src.matching.FAR import compute_far
 from src.matching.ROC import plot_roc
-from src.matching.utils import console_step, report_scores, evaluate_frr_across_thresholds, evaluate_far_across_thresholds
+from src.matching.utils import console_step, report_scores, evaluate_frr_across_thresholds, evaluate_far_across_thresholds, compute_minutiae_statistics
 
 # ------------------------------------------------------------
 # Setup Logging
@@ -92,10 +92,10 @@ def main(config_path="config/config_matching.yml", demo=False):
 
         demo_settings = {
             "max_per_user": 2,          # invece di 5–10
-            "frr_ransac": 200,          # invece di 300
-            "far_ransac": 200,          # invece di 300
-            "frr_min_inliers": 3,
-            "far_min_inliers": 4,
+            "frr_ransac": 500,          # invece di 300
+            "far_ransac": 500,          # invece di 300
+            "frr_min_inliers": 5,
+            "far_min_inliers": 5,
             "num_points": 30            # invece di 50
         }
     else:
@@ -114,6 +114,8 @@ def main(config_path="config/config_matching.yml", demo=False):
     console_step("Caricamento Dataset")
     dataset = load_dataset(minutiae_base, max_per_user=demo_settings["max_per_user"])
     print(f"Utenti caricati: {len(dataset)}")
+    compute_minutiae_statistics(dataset, output_file="logs/minutiae_stats.csv")
+
 
     # ----------------------------------------------
     # Calcolo FRR
@@ -121,8 +123,8 @@ def main(config_path="config/config_matching.yml", demo=False):
     console_step("Calcolo FRR")
     genuine_scores = compute_frr(
         dataset,
-        dist_thresh=25,
-        orient_thresh_deg=20,
+        dist_thresh=30,
+        orient_thresh_deg=30,
         use_type=True,
         ransac_iter=demo_settings["frr_ransac"],
         min_inliers=demo_settings["frr_min_inliers"],
