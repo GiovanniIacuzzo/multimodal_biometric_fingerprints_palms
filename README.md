@@ -112,7 +112,7 @@ Questo componente:
    - cluster di appartenenza  
 4. **genera un catalogo CSV** ordinato e pronto per tutte le successive fasi della pipeline.
 
->[!NOTE]
+>[!IMPORTANT]
 >L’unificazione dei dataset tramite questa catalogazione è fondamentale per permettere un matching affidabile e un calcolo coerente delle metriche (FRR / FAR / ROC).
 ---
 
